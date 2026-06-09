@@ -2,7 +2,7 @@ package com.smartgate.llm;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
-
+import com.smartgate.ConfigManager;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
@@ -11,7 +11,7 @@ import java.net.URL;
 
 public class OllamaClient {
 
-    private static final String OLLAMA_HOST = "http://10.194.166.29:11434";
+    private static final String OLLAMA_HOST = "http://" + ConfigManager.get("OLLAMA_HOST", "10.194.166.29") + ":11434";
     private static final String MODEL = "gemma3:4b";
     private final Gson gson = new Gson();
 

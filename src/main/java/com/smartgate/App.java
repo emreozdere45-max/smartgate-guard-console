@@ -8,7 +8,7 @@ import javafx.stage.Stage;
 
 public class App extends Application {
 
-    private static final String INTERCOM_IP = "192.168.1.100";
+    private static final String INTERCOM_IP = ConfigManager.get("INTERCOM_IP", "192.168.1.100");
 
     @Override
     public void start(Stage stage) {
