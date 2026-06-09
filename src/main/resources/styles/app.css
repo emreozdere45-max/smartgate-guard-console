@@ -118,3 +118,14 @@
 .separator .line {
     -fx-border-color: #2d3148;
 }
+.table-view .text {
+    -fx-fill: #e2e8f0;
+}
+
+.column-header-background .filler {
+    -fx-background-color: #2d3148;
+}
+
+.table-view .corner {
+    -fx-background-color: #2d3148;
+}

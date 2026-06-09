@@ -95,13 +95,19 @@ public class MainController {
         timeCol.setCellValueFactory(data ->
                 new javafx.beans.property.SimpleStringProperty(
                         data.getValue().getUnlockTime() != null ?
-                                data.getValue().getUnlockTime().toString() : ""
+                                data.getValue().getUnlockTime().toLocalDate().toString() + " " +
+                                        data.getValue().getUnlockTime().toLocalTime().toString().substring(0, 8) : ""
                 ));
+        timeCol.setPrefWidth(160);
+
         TableColumn<GateLog, String> methodCol = new TableColumn<>("Yöntem");
         methodCol.setCellValueFactory(data ->
                 new javafx.beans.property.SimpleStringProperty(data.getValue().getUnlockMethod()));
+        methodCol.setPrefWidth(120);
+
         gateLogTable.getColumns().addAll(timeCol, methodCol);
         gateLogTable.setPrefHeight(200);
+        gateLogTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
 
         // Alarm tablosu
         alarmTable = new TableView<>();
@@ -109,16 +115,24 @@ public class MainController {
         alarmTimeCol.setCellValueFactory(data ->
                 new javafx.beans.property.SimpleStringProperty(
                         data.getValue().getAlarmTime() != null ?
-                                data.getValue().getAlarmTime().toString() : ""
+                                data.getValue().getAlarmTime().toLocalDate().toString() + " " +
+                                        data.getValue().getAlarmTime().toLocalTime().toString().substring(0, 8) : ""
                 ));
+        alarmTimeCol.setPrefWidth(160);
+
         TableColumn<Alarm, String> alarmTypeCol = new TableColumn<>("Tip");
         alarmTypeCol.setCellValueFactory(data ->
                 new javafx.beans.property.SimpleStringProperty(data.getValue().getAlarmType()));
+        alarmTypeCol.setPrefWidth(100);
+
         TableColumn<Alarm, String> alarmAptCol = new TableColumn<>("Daire");
         alarmAptCol.setCellValueFactory(data ->
                 new javafx.beans.property.SimpleStringProperty(data.getValue().getApartmentNo()));
+        alarmAptCol.setPrefWidth(120);
+
         alarmTable.getColumns().addAll(alarmTimeCol, alarmTypeCol, alarmAptCol);
         alarmTable.setPrefHeight(200);
+        alarmTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
 
         Label logLabel = new Label("Kapı Giriş Kayıtları");
         logLabel.getStyleClass().add("section-label");
