@@ -35,6 +35,26 @@ docker compose up -d
 mvn javafx:run
 ```
 
+Backend'i Docker icinde calistirmak icin IntelliJ'de calisan backend varsa once durdurun, sonra:
+
+```bash
+docker compose up -d backend-api
+```
+
+Backend kodu degistikce Docker'in otomatik rebuild/restart yapmasi icin:
+
+```bash
+docker compose watch backend-api
+```
+
+Backend API:
+
+- Health: `GET http://localhost:8081/api/health`
+- Cihazlar: `GET http://localhost:8081/api/devices`
+- Cihaz ekleme: `POST http://localhost:8081/api/devices`
+- Varsayilan cihazla kapi acma: `POST http://localhost:8081/api/door/unlock`
+- Belirli cihazla kapi acma: `POST http://localhost:8081/api/devices/{deviceId}/door/unlock`
+
 Adminer:
 
 - URL: `http://localhost:8080`
@@ -91,4 +111,3 @@ git push origin feature/door-unlock
 | 8 | Video stream altyapisi |
 | 9 | Raporlama, hata yonetimi, UI cila |
 | 10 | Demo, README, test ve teslim |
-

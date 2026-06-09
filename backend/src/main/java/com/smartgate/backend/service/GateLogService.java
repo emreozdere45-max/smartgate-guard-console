@@ -24,11 +24,12 @@ public class GateLogService {
             .toList();
     }
 
-    public GateLog saveConsoleUnlock(String doorId, String note) {
+    public GateLog saveConsoleUnlock(String doorId, Long deviceId, String note) {
         GateLog gateLog = new GateLog();
         gateLog.setEventTime(java.time.LocalDateTime.now());
         gateLog.setMethod("CONSOLE");
         gateLog.setDoorId(doorId);
+        gateLog.setDeviceId(deviceId);
         gateLog.setNote(note);
         return gateLogRepository.save(gateLog);
     }
@@ -39,8 +40,8 @@ public class GateLogService {
             gateLog.getEventTime(),
             gateLog.getMethod(),
             gateLog.getDoorId(),
+            gateLog.getDeviceId(),
             gateLog.getNote()
         );
     }
 }
-

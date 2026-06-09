@@ -7,7 +7,7 @@ public record GateLogResponse(
     LocalDateTime eventTime,
     String method,
     String doorId,
+    Long deviceId,
     String note
 ) {
 }
-

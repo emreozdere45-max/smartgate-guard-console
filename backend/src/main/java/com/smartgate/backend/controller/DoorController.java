@@ -20,8 +20,7 @@ public class DoorController {
 
     @PostMapping("/unlock")
     public DoorUnlockResponse unlock(@Valid @RequestBody(required = false) DoorUnlockRequest request) {
-        DoorUnlockRequest safeRequest = request == null ? new DoorUnlockRequest(1, "main") : request;
+        DoorUnlockRequest safeRequest = request == null ? new DoorUnlockRequest(null, 1, "main") : request;
         return doorService.unlock(safeRequest);
     }
 }
-

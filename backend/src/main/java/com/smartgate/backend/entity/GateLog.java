@@ -25,6 +25,9 @@ public class GateLog {
     @Column(name = "door_id", nullable = false, length = 40)
     private String doorId;
 
+    @Column(name = "device_id")
+    private Long deviceId;
+
     @Column(columnDefinition = "text")
     private String note;
 
@@ -56,6 +59,14 @@ public class GateLog {
         this.doorId = doorId;
     }
 
+    public Long getDeviceId() {
+        return deviceId;
+    }
+
+    public void setDeviceId(Long deviceId) {
+        this.deviceId = deviceId;
+    }
+
     public String getNote() {
         return note;
     }
@@ -64,4 +75,3 @@ public class GateLog {
         this.note = note;
     }
 }
-

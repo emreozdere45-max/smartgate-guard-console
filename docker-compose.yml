@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   postgres-db:
     image: postgres:15-alpine
@@ -22,6 +20,27 @@ services:
       - "8080:8080"
     restart: unless-stopped
 
+  backend-api:
+    build:
+      context: ./backend
+    container_name: smartgate-backend
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-db:5432/smartgate_db
+      SPRING_DATASOURCE_USERNAME: smartgate_user
+      SPRING_DATASOURCE_PASSWORD: smartgate_password
+      SMARTGATE_INTERCOM_HOST: 192.168.1.100
+      SMARTGATE_INTERCOM_PORT: 5432
+    depends_on:
+      - postgres-db
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: rebuild
+          path: ./backend/src
+        - action: rebuild
+          path: ./backend/pom.xml
+
 volumes:
   pgdata:
-
