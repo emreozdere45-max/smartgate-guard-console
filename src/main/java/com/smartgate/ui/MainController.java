@@ -11,12 +11,12 @@ import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
-
+import com.smartgate.BackendApiClient;
 import java.time.LocalDateTime;
 import java.util.List;
 
 public class MainController {
-
+    private final BackendApiClient backendApiClient = new BackendApiClient();
     private final IntercomClient intercomClient;
     private final GateLogDAO gateLogDAO = new GateLogDAO();
     private final AlarmDAO alarmDAO = new AlarmDAO();
@@ -74,8 +74,16 @@ public class MainController {
         unlockBtn.getStyleClass().add("btn-primary");
         unlockBtn.setMaxWidth(Double.MAX_VALUE);
         unlockBtn.setOnAction(e -> {
-            intercomClient.unlockDoor();
-            logGateOpen();
+            new Thread(() -> {
+                boolean success = backendApiClient.unlockDoor("1");
+                if (success) {
+                    System.out.println("Backend üzerinden kapı açıldı.");
+                } else {
+                    System.out.println("Backend bağlanamadı, direkt TCP deneniyor...");
+                    intercomClient.unlockDoor();
+                }
+                logGateOpen();
+            }).start();
         });
 
         Button handshakeBtn = new Button("🤝 Handshake");
