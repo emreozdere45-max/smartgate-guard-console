@@ -6,7 +6,7 @@ import java.sql.SQLException;
 
 public class DatabaseManager {
 
-    private static final String HOST = ConfigManager.get("DB_HOST", "10.194.166.29");
+    private static final String HOST = ConfigManager.get("DB_HOST", "localhost");
     private static final String PORT = ConfigManager.get("DB_PORT", "5433");
     private static final String DB_NAME = "smartgate_db";
     private static final String USER = "smartgate_user";
