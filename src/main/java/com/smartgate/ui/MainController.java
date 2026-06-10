@@ -56,6 +56,15 @@ public class MainController {
         root.setLeft(leftPanel);
         root.setCenter(centerPanel);
         root.setBottom(bottomPanel);
+        // Otomatik yenileme - her 10 saniyede bir
+        javafx.animation.Timeline autoRefresh = new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(
+                        javafx.util.Duration.seconds(10),
+                        e -> refreshTables()
+                )
+        );
+        autoRefresh.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        autoRefresh.play();
 
         return root;
     }
