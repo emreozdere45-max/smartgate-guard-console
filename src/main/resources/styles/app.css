@@ -109,7 +109,7 @@
 
 .llm-output {
     -fx-background-color: #2d3148;
-    -fx-text-fill: #a0ff8c;
+    -fx-text-fill: #000;
     -fx-border-color: #3d4268;
     -fx-border-radius: 8;
     -fx-background-radius: 8;

@@ -15,6 +15,7 @@ public class ConfigManager {
     }
 
     private static void load() {
+        System.out.println("Çalışma dizini: " + System.getProperty("user.dir"));
         try (BufferedReader reader = new BufferedReader(new FileReader(".env"))) {
             String line;
             while ((line = reader.readLine()) != null) {

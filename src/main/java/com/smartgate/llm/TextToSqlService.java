@@ -1,14 +1,12 @@
 package com.smartgate.llm;
 
 public class TextToSqlService {
-
     private final OllamaClient ollamaClient = new OllamaClient();
-
     private static final String SCHEMA_CONTEXT = """
             Veritabanı şeması:
             - residents (id, block_no, apartment_no, full_name, phone, rfid_id)
-            - gate_logs (id, unlock_time, unlock_method, gate_id, resident_id)
-            - alarms (id, alarm_time, apartment_no, alarm_type, resolved)
+            - gate_logs (id, event_time, method, door_id, resident_id)
+            - alarms (id, alarm_time, apartment_id, alarm_type, source_label, is_resolved, resolved_at)
             - chat_messages (id, sent_at, sender_type, apartment_no, message)
             
             Kurallar:
