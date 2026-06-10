@@ -176,8 +176,8 @@ public class MainController {
 
         llmOutput.setText("Sorgu üretiliyor...");
         new Thread(() -> {
-            String sql = textToSqlService.generateSql(question);
-            Platform.runLater(() -> llmOutput.setText("Üretilen SQL:\n" + sql));
+            String result = textToSqlService.generateAndExecute(question);
+            Platform.runLater(() -> llmOutput.setText(result));
         }).start();
     }
 
