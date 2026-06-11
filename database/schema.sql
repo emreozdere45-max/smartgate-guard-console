@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS alarms (
     apartment_id BIGINT REFERENCES apartments(id),
     alarm_type VARCHAR(40) NOT NULL,
     source_label VARCHAR(120),
+    severity VARCHAR(20) NOT NULL DEFAULT 'HIGH',
     is_resolved BOOLEAN NOT NULL DEFAULT FALSE,
     resolved_at TIMESTAMP
 );
@@ -57,6 +58,9 @@ CREATE TABLE IF NOT EXISTS intercom_devices (
 
 ALTER TABLE gate_logs
     ADD COLUMN IF NOT EXISTS device_id BIGINT REFERENCES intercom_devices(id);
+
+ALTER TABLE alarms
+    ADD COLUMN IF NOT EXISTS severity VARCHAR(20) NOT NULL DEFAULT 'HIGH';
 
 INSERT INTO intercom_devices (name, ip_address, command_port, location)
 VALUES ('Main Door Panel', '192.168.1.100', 5432, 'Main entrance')

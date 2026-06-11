@@ -16,7 +16,7 @@ public class TextToSqlService {
         - apartments (id, block_name, apartment_no, created_at)
         - residents (id, apartment_id, full_name, phone, rfid_id, is_active, created_at)
         - gate_logs (id, event_time TIMESTAMP, method VARCHAR, door_id VARCHAR, resident_id, note TEXT, device_id)
-        - alarms (id, alarm_time TIMESTAMP, apartment_id, alarm_type VARCHAR, source_label VARCHAR, is_resolved BOOLEAN, resolved_at TIMESTAMP)
+        - alarms (id, alarm_time TIMESTAMP, apartment_id, alarm_type VARCHAR, source_label VARCHAR, severity VARCHAR, is_resolved BOOLEAN, resolved_at TIMESTAMP)
         - chat_messages (id, apartment_id, sender_type VARCHAR, message_text TEXT, sent_at TIMESTAMP, delivery_status VARCHAR)
         - visitors (id, visitor_name VARCHAR, visitor_type VARCHAR, block_name VARCHAR, apartment_no VARCHAR, visit_reason TEXT, status VARCHAR, entry_time TIMESTAMP, exit_time TIMESTAMP, created_at TIMESTAMP)
 
@@ -107,19 +107,19 @@ public class TextToSqlService {
         SQL: SELECT event_time, method, door_id FROM gate_logs ORDER BY event_time DESC LIMIT 1
 
         Soru: Aktif alarmlari listele
-        SQL: SELECT alarm_time, alarm_type, apartment_id, source_label FROM alarms WHERE is_resolved = false ORDER BY alarm_time DESC
+        SQL: SELECT alarm_time, alarm_type, severity, apartment_id, source_label FROM alarms WHERE is_resolved = false ORDER BY alarm_time DESC
 
         Soru: Bugunku alarmlari goster
-        SQL: SELECT alarm_time, alarm_type, apartment_id, source_label, is_resolved FROM alarms WHERE alarm_time >= CURRENT_DATE AND alarm_time < CURRENT_DATE + INTERVAL '1 day' ORDER BY alarm_time DESC
+        SQL: SELECT alarm_time, alarm_type, severity, apartment_id, source_label, is_resolved FROM alarms WHERE alarm_time >= CURRENT_DATE AND alarm_time < CURRENT_DATE + INTERVAL '1 day' ORDER BY alarm_time DESC
 
         Soru: Cozulmemis alarmlar hangileri?
-        SQL: SELECT alarm_time, alarm_type, apartment_id, source_label FROM alarms WHERE is_resolved = false ORDER BY alarm_time DESC
+        SQL: SELECT alarm_time, alarm_type, severity, apartment_id, source_label FROM alarms WHERE is_resolved = false ORDER BY alarm_time DESC
 
         Soru: Yangin alarmlarini listele
-        SQL: SELECT alarm_time, apartment_id, source_label, is_resolved FROM alarms WHERE LOWER(alarm_type) LIKE '%yangin%' ORDER BY alarm_time DESC
+        SQL: SELECT alarm_time, severity, apartment_id, source_label, is_resolved FROM alarms WHERE LOWER(alarm_type) LIKE '%yangin%' OR LOWER(alarm_type) LIKE '%fire%' ORDER BY alarm_time DESC
 
         Soru: Son 24 saatte gelen alarmlar
-        SQL: SELECT alarm_time, alarm_type, apartment_id, source_label, is_resolved FROM alarms WHERE alarm_time >= NOW() - INTERVAL '24 hours' ORDER BY alarm_time DESC
+        SQL: SELECT alarm_time, alarm_type, severity, apartment_id, source_label, is_resolved FROM alarms WHERE alarm_time >= NOW() - INTERVAL '24 hours' ORDER BY alarm_time DESC
         """;
 
     public String generateSql(String userQuestion) {

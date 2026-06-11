@@ -6,7 +6,9 @@ public class Alarm {
     private int id;
     private LocalDateTime alarmTime;
     private String apartmentNo;
-    private String alarmType; // PIR, FIRE, GAS
+    private String alarmType; // FIRE, GAS, FLOOD, MOTION, DOOR_WINDOW
+    private String sourceLabel;
+    private String severity; // LOW, MEDIUM, HIGH, CRITICAL
     private boolean resolved;
 
     public Alarm() {}
@@ -22,6 +24,12 @@ public class Alarm {
 
     public String getAlarmType() { return alarmType; }
     public void setAlarmType(String alarmType) { this.alarmType = alarmType; }
+
+    public String getSourceLabel() { return sourceLabel; }
+    public void setSourceLabel(String sourceLabel) { this.sourceLabel = sourceLabel; }
+
+    public String getSeverity() { return severity; }
+    public void setSeverity(String severity) { this.severity = severity; }
 
     public boolean isResolved() { return resolved; }
     public void setResolved(boolean resolved) { this.resolved = resolved; }

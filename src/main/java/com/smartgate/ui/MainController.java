@@ -77,12 +77,17 @@ public class MainController {
             if (packet.getOpe_type() == 47) {
                 Alarm alarm = new Alarm();
                 alarm.setAlarmTime(LocalDateTime.now());
-                alarm.setAlarmType("INTERCOM");
+                alarm.setAlarmType("FIRE");
+                alarm.setSeverity("CRITICAL");
                 alarm.setApartmentNo(packet.getDataString() != null ? packet.getDataString() : "Bilinmiyor");
+                alarm.setSourceLabel("Interkom alarm paneli");
                 alarm.setResolved(false);
                 new Thread(() -> {
                     alarmDAO.insert(alarm);
-                    Platform.runLater(() -> refreshTables());
+                    Platform.runLater(() -> {
+                        refreshTables();
+                        showAlarmPopup(alarm);
+                    });
                 }).start();
                 System.out.println("Alarm kaydedildi: ope_type=47");
             }
@@ -116,10 +121,15 @@ public class MainController {
         refreshBtn.setMaxWidth(Double.MAX_VALUE);
         refreshBtn.setOnAction(e -> refreshTables());
 
+        Button testAlarmBtn = new Button("Test Alarmi");
+        testAlarmBtn.getStyleClass().add("btn-secondary");
+        testAlarmBtn.setMaxWidth(Double.MAX_VALUE);
+        testAlarmBtn.setOnAction(e -> triggerTestAlarm());
+
         Label connLabel = new Label("Interkom Bağlantısı");
         connLabel.getStyleClass().add("section-label");
 
-        VBox panel = new VBox(12, connLabel, unlockBtn, handshakeBtn, new Separator(), refreshBtn);
+        VBox panel = new VBox(12, connLabel, unlockBtn, handshakeBtn, new Separator(), refreshBtn, testAlarmBtn);
         panel.setPadding(new Insets(16));
         panel.getStyleClass().add("left-panel");
         return panel;
@@ -167,7 +177,17 @@ public class MainController {
                 new javafx.beans.property.SimpleStringProperty(data.getValue().getApartmentNo()));
         alarmAptCol.setPrefWidth(120);
 
-        alarmTable.getColumns().addAll(alarmTimeCol, alarmTypeCol, alarmAptCol);
+        TableColumn<Alarm, String> alarmSeverityCol = new TableColumn<>("Oncelik");
+        alarmSeverityCol.setCellValueFactory(data ->
+                new javafx.beans.property.SimpleStringProperty(data.getValue().getSeverity()));
+        alarmSeverityCol.setPrefWidth(100);
+
+        TableColumn<Alarm, String> alarmSourceCol = new TableColumn<>("Kaynak");
+        alarmSourceCol.setCellValueFactory(data ->
+                new javafx.beans.property.SimpleStringProperty(data.getValue().getSourceLabel()));
+        alarmSourceCol.setPrefWidth(160);
+
+        alarmTable.getColumns().addAll(alarmTimeCol, alarmTypeCol, alarmAptCol, alarmSeverityCol, alarmSourceCol);
         alarmTable.setPrefHeight(200);
         alarmTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
 
@@ -350,6 +370,48 @@ public class MainController {
                     return;
                 }
                 refreshTables();
+            });
+        }).start();
+    }
+
+    private void showAlarmPopup(Alarm alarm) {
+        Alert alert = new Alert(Alert.AlertType.WARNING);
+        alert.setTitle("ACIL ALARM");
+        alert.setHeaderText("ACIL ALARM");
+
+        String time = alarm.getAlarmTime() != null
+                ? alarm.getAlarmTime().toLocalTime().toString().substring(0, 8)
+                : "";
+        String apartment = alarm.getApartmentNo() != null ? alarm.getApartmentNo() : "Bilinmiyor";
+        String type = alarm.getAlarmType() != null ? alarm.getAlarmType() : "Bilinmiyor";
+        String severity = alarm.getSeverity() != null ? alarm.getSeverity() : "HIGH";
+        String source = alarm.getSourceLabel() != null ? alarm.getSourceLabel() : "Bilinmiyor";
+
+        alert.setContentText(
+                "Daire: " + apartment + "\n" +
+                "Tip: " + type + "\n" +
+                "Oncelik: " + severity + "\n" +
+                "Kaynak: " + source + "\n" +
+                "Saat: " + time
+        );
+
+        alert.show();
+    }
+
+    private void triggerTestAlarm() {
+        Alarm alarm = new Alarm();
+        alarm.setAlarmTime(LocalDateTime.now());
+        alarm.setAlarmType("FIRE");
+        alarm.setSeverity("CRITICAL");
+        alarm.setApartmentNo("15B");
+        alarm.setSourceLabel("Test yangin sensoru");
+        alarm.setResolved(false);
+
+        new Thread(() -> {
+            alarmDAO.insert(alarm);
+            Platform.runLater(() -> {
+                refreshTables();
+                showAlarmPopup(alarm);
             });
         }).start();
     }

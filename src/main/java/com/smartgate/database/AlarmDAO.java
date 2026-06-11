@@ -9,13 +9,14 @@ import java.util.List;
 public class AlarmDAO {
 
     public void insert(Alarm alarm) {
-        String sql = "INSERT INTO alarms (alarm_time, alarm_type, source_label, is_resolved) VALUES (?, ?, ?, ?)";
+        String sql = "INSERT INTO alarms (alarm_time, alarm_type, source_label, severity, is_resolved) VALUES (?, ?, ?, ?, ?)";
         try (Connection conn = DatabaseManager.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setTimestamp(1, Timestamp.valueOf(alarm.getAlarmTime()));
             stmt.setString(2, alarm.getAlarmType());
-            stmt.setString(3, alarm.getApartmentNo());
-            stmt.setBoolean(4, alarm.isResolved());
+            stmt.setString(3, alarm.getSourceLabel() != null ? alarm.getSourceLabel() : alarm.getApartmentNo());
+            stmt.setString(4, alarm.getSeverity() != null ? alarm.getSeverity() : "HIGH");
+            stmt.setBoolean(5, alarm.isResolved());
             stmt.executeUpdate();
             System.out.println("Alarm kaydedildi.");
         } catch (SQLException e) {
@@ -35,6 +36,8 @@ public class AlarmDAO {
                 a.setAlarmTime(rs.getTimestamp("alarm_time").toLocalDateTime());
                 a.setAlarmType(rs.getString("alarm_type"));
                 a.setApartmentNo(rs.getString("source_label"));
+                a.setSourceLabel(rs.getString("source_label"));
+                a.setSeverity(rs.getString("severity"));
                 a.setResolved(rs.getBoolean("is_resolved"));
                 alarms.add(a);
             }
