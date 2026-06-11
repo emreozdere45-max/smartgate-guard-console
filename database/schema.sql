@@ -66,3 +66,21 @@ CREATE INDEX IF NOT EXISTS idx_gate_logs_event_time ON gate_logs(event_time);
 CREATE INDEX IF NOT EXISTS idx_gate_logs_device_id ON gate_logs(device_id);
 CREATE INDEX IF NOT EXISTS idx_alarms_alarm_time ON alarms(alarm_time);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_apartment ON chat_messages(apartment_id);
+
+
+
+CREATE TABLE IF NOT EXISTS visitors (
+                                        id BIGSERIAL PRIMARY KEY,
+                                        visitor_name VARCHAR(120) NOT NULL,
+    visitor_type VARCHAR(40) NOT NULL,
+    block_name VARCHAR(20),
+    apartment_no VARCHAR(20),
+    visit_reason TEXT,
+    status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+    entry_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    exit_time TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+CREATE INDEX IF NOT EXISTS idx_visitors_entry_time ON visitors(entry_time);
+CREATE INDEX IF NOT EXISTS idx_visitors_status ON visitors(status);

@@ -5,6 +5,7 @@ import com.smartgate.database.GateLogDAO;
 import com.smartgate.llm.TextToSqlService;
 import com.smartgate.model.Alarm;
 import com.smartgate.model.GateLog;
+import com.smartgate.model.Visitor;
 import com.smartgate.network.IntercomClient;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -24,8 +25,14 @@ public class MainController {
 
     private TableView<GateLog> gateLogTable;
     private TableView<Alarm> alarmTable;
+    private TableView<Visitor> visitorTable;
     private TextArea llmOutput;
     private TextField llmInput;
+    private TextField visitorNameInput;
+    private ComboBox<String> visitorTypeInput;
+    private TextField blockInput;
+    private TextField apartmentInput;
+    private TextField visitReasonInput;
 
     public MainController(IntercomClient intercomClient) {
         this.intercomClient = intercomClient;
@@ -164,14 +171,121 @@ public class MainController {
         alarmTable.setPrefHeight(200);
         alarmTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
 
+        visitorTable = new TableView<>();
+        TableColumn<Visitor, String> visitorTimeCol = new TableColumn<>("Saat");
+        visitorTimeCol.setCellValueFactory(data ->
+                new javafx.beans.property.SimpleStringProperty(formatApiTime(data.getValue().getEntryTime())));
+        visitorTimeCol.setPrefWidth(140);
+
+        TableColumn<Visitor, String> visitorNameCol = new TableColumn<>("Gelen Kişi");
+        visitorNameCol.setCellValueFactory(data ->
+                new javafx.beans.property.SimpleStringProperty(data.getValue().getVisitorName()));
+        visitorNameCol.setPrefWidth(160);
+
+        TableColumn<Visitor, String> visitorTypeCol = new TableColumn<>("Tür");
+        visitorTypeCol.setCellValueFactory(data ->
+                new javafx.beans.property.SimpleStringProperty(data.getValue().getVisitorType()));
+        visitorTypeCol.setPrefWidth(120);
+
+        TableColumn<Visitor, String> visitorApartmentCol = new TableColumn<>("Daire");
+        visitorApartmentCol.setCellValueFactory(data ->
+                new javafx.beans.property.SimpleStringProperty(data.getValue().getApartmentLabel()));
+        visitorApartmentCol.setPrefWidth(90);
+
+        TableColumn<Visitor, String> visitorStatusCol = new TableColumn<>("Durum");
+        visitorStatusCol.setCellValueFactory(data ->
+                new javafx.beans.property.SimpleStringProperty(data.getValue().getStatus()));
+        visitorStatusCol.setPrefWidth(110);
+
+        visitorTable.getColumns().addAll(visitorTimeCol, visitorNameCol, visitorTypeCol, visitorApartmentCol, visitorStatusCol);
+        visitorTable.setPrefHeight(180);
+        visitorTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+
         Label logLabel = new Label("Kapı Giriş Kayıtları");
         logLabel.getStyleClass().add("section-label");
         Label alarmLabel = new Label("Aktif Alarmlar");
         alarmLabel.getStyleClass().add("section-label");
+        Label visitorLabel = new Label("Ziyaretçi Kayıtları");
+        visitorLabel.getStyleClass().add("section-label");
 
-        VBox panel = new VBox(8, logLabel, gateLogTable, alarmLabel, alarmTable);
+        VBox panel = new VBox(8, logLabel, gateLogTable, alarmLabel, alarmTable, visitorLabel, buildVisitorForm(), visitorTable);
         panel.setPadding(new Insets(16));
         return panel;
+    }
+
+    private GridPane buildVisitorForm() {
+        visitorNameInput = new TextField();
+        visitorNameInput.setPromptText("Gelen kişi");
+
+        visitorTypeInput = new ComboBox<>(FXCollections.observableArrayList(
+                "MISAFIR", "KURYE", "BAKICI", "TEMIZLIK", "TEKNIK_SERVIS", "GUVENLIK_PERSONELI"
+        ));
+        visitorTypeInput.setValue("MISAFIR");
+
+        blockInput = new TextField();
+        blockInput.setPromptText("Blok");
+
+        apartmentInput = new TextField();
+        apartmentInput.setPromptText("Daire");
+
+        visitReasonInput = new TextField();
+        visitReasonInput.setPromptText("Sebep");
+
+        Button saveVisitorBtn = new Button("Ziyaretçi Kaydet");
+        saveVisitorBtn.getStyleClass().add("btn-primary");
+        saveVisitorBtn.setOnAction(e -> saveVisitor());
+
+        GridPane form = new GridPane();
+        form.setHgap(8);
+        form.setVgap(8);
+        form.add(visitorNameInput, 0, 0);
+        form.add(visitorTypeInput, 1, 0);
+        form.add(blockInput, 2, 0);
+        form.add(apartmentInput, 3, 0);
+        form.add(visitReasonInput, 4, 0);
+        form.add(saveVisitorBtn, 5, 0);
+
+        ColumnConstraints wide = new ColumnConstraints();
+        wide.setHgrow(Priority.ALWAYS);
+        form.getColumnConstraints().addAll(
+                wide,
+                new ColumnConstraints(130),
+                new ColumnConstraints(80),
+                new ColumnConstraints(80),
+                wide,
+                new ColumnConstraints(150)
+        );
+        return form;
+    }
+
+    private void saveVisitor() {
+        String name = visitorNameInput.getText().trim();
+        if (name.isEmpty()) {
+            llmOutput.setText("Ziyaretçi adı boş olamaz.");
+            return;
+        }
+
+        new Thread(() -> {
+            Visitor visitor = backendApiClient.createVisitor(
+                    name,
+                    visitorTypeInput.getValue(),
+                    blockInput.getText().trim(),
+                    apartmentInput.getText().trim(),
+                    visitReasonInput.getText().trim()
+            );
+
+            Platform.runLater(() -> {
+                if (visitor == null) {
+                    llmOutput.setText("Ziyaretçi kaydedilemedi. Backend çalışıyor mu?");
+                    return;
+                }
+                visitorNameInput.clear();
+                blockInput.clear();
+                apartmentInput.clear();
+                visitReasonInput.clear();
+                refreshTables();
+            });
+        }).start();
     }
 
     private VBox buildBottomPanel() {
@@ -215,10 +329,19 @@ public class MainController {
         new Thread(() -> {
             List<GateLog> logs = gateLogDAO.getAll();
             List<Alarm> alarms = alarmDAO.getUnresolved();
+            List<Visitor> visitors = backendApiClient.getVisitors();
             Platform.runLater(() -> {
                 gateLogTable.setItems(FXCollections.observableArrayList(logs));
                 alarmTable.setItems(FXCollections.observableArrayList(alarms));
+                visitorTable.setItems(FXCollections.observableArrayList(visitors));
             });
         }).start();
+    }
+
+    private String formatApiTime(String value) {
+        if (value == null || value.length() < 16) {
+            return "";
+        }
+        return value.substring(0, 16).replace('T', ' ');
     }
 }

@@ -6,6 +6,10 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import com.smartgate.model.Visitor;
 
 public class BackendApiClient {
 
@@ -13,7 +17,7 @@ public class BackendApiClient {
     private final Gson gson = new Gson();
 
     public BackendApiClient() {
-        String host = ConfigManager.get("BACKEND_HOST", "192.168.36.29");
+        String host = ConfigManager.get("BACKEND_HOST", "localhost");
         String port = ConfigManager.get("BACKEND_PORT", "8081");
         this.baseUrl = "http://" + host + ":" + port + "/api";
     }
@@ -77,5 +81,26 @@ public class BackendApiClient {
         String body = "{\"deviceId\":\"" + deviceId + "\",\"method\":\"CONSOLE\"}";
         String response = post("/door/unlock", body);
         return response != null && response.contains("success");
+    }
+
+    public List<Visitor> getVisitors() {
+        String response = get("/visitors");
+        if (response == null || response.isBlank()) {
+            return Collections.emptyList();
+        }
+        Visitor[] visitors = gson.fromJson(response, Visitor[].class);
+        return visitors == null ? Collections.emptyList() : Arrays.asList(visitors);
+    }
+
+    public Visitor createVisitor(String visitorName, String visitorType, String blockName, String apartmentNo, String visitReason) {
+        JsonObject body = new JsonObject();
+        body.addProperty("visitorName", visitorName);
+        body.addProperty("visitorType", visitorType);
+        body.addProperty("blockName", blockName);
+        body.addProperty("apartmentNo", apartmentNo);
+        body.addProperty("visitReason", visitReason);
+
+        String response = post("/visitors", gson.toJson(body));
+        return response == null ? null : gson.fromJson(response, Visitor.class);
     }
 }
