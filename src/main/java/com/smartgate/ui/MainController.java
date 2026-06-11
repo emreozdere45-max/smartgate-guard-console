@@ -69,7 +69,8 @@ public class MainController {
 
         startAutoRefresh();
         startIntercomListener();
-
+        videoStreamReceiver = new VideoStreamReceiver();
+        videoStreamReceiver.start(videoView);
         return root;
     }
 
@@ -780,5 +781,8 @@ public class MainController {
                 }
             });
         }).start();
+    }
+    public VideoStreamReceiver getVideoStreamReceiver() {
+        return videoStreamReceiver;
     }
 }

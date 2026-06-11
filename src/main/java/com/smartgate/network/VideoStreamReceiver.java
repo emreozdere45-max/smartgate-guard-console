@@ -1,86 +1,94 @@
 package com.smartgate.network;
 
+import javafx.application.Platform;
+import javafx.scene.image.ImageView;
+import javafx.scene.image.PixelWriter;
+import javafx.scene.image.WritableImage;
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory;
 import uk.co.caprica.vlcj.player.base.MediaPlayer;
-import uk.co.caprica.vlcj.player.component.CallbackMediaPlayerComponent;
+import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter;
 import uk.co.caprica.vlcj.player.embedded.EmbeddedMediaPlayer;
+import uk.co.caprica.vlcj.player.embedded.videosurface.CallbackVideoSurface;
+import uk.co.caprica.vlcj.player.embedded.videosurface.VideoSurfaceAdapters;
+import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormat;
+import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormatCallback;
+import uk.co.caprica.vlcj.player.embedded.videosurface.callback.RenderCallback;
+import uk.co.caprica.vlcj.player.embedded.videosurface.callback.format.RV32BufferFormat;
 
-import java.io.*;
-import java.net.ServerSocket;
-import java.net.Socket;
+import java.nio.ByteBuffer;
 
 public class VideoStreamReceiver {
 
-    private static final int VIDEO_PORT = 50556;
+    private MediaPlayerFactory factory;
     private EmbeddedMediaPlayer mediaPlayer;
-    private boolean running = false;
+    private WritableImage writableImage;
+    private ImageView imageView;
+    private int videoWidth = 640;
+    private int videoHeight = 480;
 
-    public void start(javafx.scene.image.ImageView imageView) {
-        if (running) return;
-        running = true;
+    public void start(ImageView imageView) {
+        this.imageView = imageView;
 
-        new Thread(() -> {
-            try (ServerSocket serverSocket = new ServerSocket(VIDEO_PORT)) {
-                serverSocket.setReuseAddress(true);
-                System.out.println("Video stream bekleniyor: port " + VIDEO_PORT);
+        try {
+            factory = new MediaPlayerFactory();
+            mediaPlayer = factory.mediaPlayers().newEmbeddedMediaPlayer();
 
-                while (running) {
-                    try (Socket client = serverSocket.accept()) {
-                        System.out.println("Video bağlantısı geldi: " + client.getInetAddress());
-                        InputStream is = client.getInputStream();
-                        handleVideoStream(is, imageView);
-                    } catch (Exception e) {
-                        if (running) System.err.println("Video client hatası: " + e.getMessage());
-                    }
-                }
-            } catch (Exception e) {
-                System.err.println("Video stream hatası: " + e.getMessage());
-            }
-        }).start();
+            mediaPlayer.videoSurface().set(new CallbackVideoSurface(
+                    new BufferFormatCallback() {
+                        @Override
+                        public BufferFormat getBufferFormat(int sourceWidth, int sourceHeight) {
+                            videoWidth = sourceWidth;
+                            videoHeight = sourceHeight;
+                            Platform.runLater(() -> {
+                                writableImage = new WritableImage(videoWidth, videoHeight);
+                                imageView.setImage(writableImage);
+                                imageView.setFitWidth(320);
+                                imageView.setFitHeight(240);
+                            });
+                            return new RV32BufferFormat(sourceWidth, sourceHeight);
+                        }
+
+                        @Override
+                        public void allocatedBuffers(ByteBuffer[] buffers) {}
+                    },
+                    new RenderCallback() {
+                        @Override
+                        public void display(MediaPlayer mediaPlayer, ByteBuffer[] nativeBuffers, BufferFormat bufferFormat) {
+                            ByteBuffer byteBuffer = nativeBuffers[0];
+                            Platform.runLater(() -> {
+                                if (writableImage != null) {
+                                    PixelWriter pw = writableImage.getPixelWriter();
+                                    pw.setPixels(0, 0, videoWidth, videoHeight,
+                                            javafx.scene.image.PixelFormat.getByteBgraPreInstance(),
+                                            byteBuffer, videoWidth * 4);
+                                }
+                            });
+                        }
+                    },
+                    true,
+                    VideoSurfaceAdapters.getVideoSurfaceAdapter()
+            ));
+
+            System.out.println("VideoStreamReceiver hazır.");
+        } catch (Exception e) {
+            System.err.println("VLCJ başlatma hatası: " + e.getMessage());
+        }
     }
 
-    private void handleVideoStream(InputStream is, javafx.scene.image.ImageView imageView) throws IOException {
-        byte[] syncWord = new byte[]{(byte)0xDE, (byte)0xAD, (byte)0xBE, (byte)0xEF};
-        byte[] headerBuf = new byte[7];
-        ByteArrayOutputStream frameBuffer = new ByteArrayOutputStream();
-
-        while (running) {
-            // 7 byte header oku
-            int read = is.readNBytes(headerBuf, 0, 7);
-            if (read < 7) break;
-
-            // Sync word kontrol
-            if (headerBuf[0] != syncWord[0] || headerBuf[1] != syncWord[1]
-                    || headerBuf[2] != syncWord[2] || headerBuf[3] != syncWord[3]) {
-                System.err.println("Sync word eşleşmedi, atlanıyor...");
-                continue;
-            }
-
-            // Frame uzunluğu hesapla
-            int length = ((headerBuf[4] & 0xFF) << 16)
-                    | ((headerBuf[5] & 0xFF) << 8)
-                    | (headerBuf[6] & 0xFF);
-
-            if (length <= 0 || length > 10_000_000) {
-                System.err.println("Geçersiz frame uzunluğu: " + length);
-                continue;
-            }
-
-            // Frame verisini oku
-            byte[] frameData = new byte[length];
-            int totalRead = 0;
-            while (totalRead < length) {
-                int r = is.read(frameData, totalRead, length - totalRead);
-                if (r < 0) break;
-                totalRead += r;
-            }
-
-            System.out.println("Video frame alındı, boyut: " + length + " bytes");
-            // Frame verisi burada işlenecek (VLCJ entegrasyonu ilerleyen adımda)
+    public void playStream(String url) {
+        if (mediaPlayer != null) {
+            mediaPlayer.media().play(url);
+            System.out.println("Video stream başlatıldı: " + url);
         }
     }
 
     public void stop() {
-        running = false;
+        if (mediaPlayer != null) {
+            mediaPlayer.controls().stop();
+            mediaPlayer.release();
+        }
+        if (factory != null) {
+            factory.release();
+        }
     }
 }
