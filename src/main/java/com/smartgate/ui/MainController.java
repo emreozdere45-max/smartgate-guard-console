@@ -65,7 +65,21 @@ public class MainController {
         );
         autoRefresh.setCycleCount(javafx.animation.Animation.INDEFINITE);
         autoRefresh.play();
-
+// İnterkom dinleme başlat
+        intercomClient.startListening(packet -> {
+            if (packet.getOpe_type() == 47) {
+                Alarm alarm = new Alarm();
+                alarm.setAlarmTime(LocalDateTime.now());
+                alarm.setAlarmType("INTERCOM");
+                alarm.setApartmentNo(packet.getDataString() != null ? packet.getDataString() : "Bilinmiyor");
+                alarm.setResolved(false);
+                new Thread(() -> {
+                    alarmDAO.insert(alarm);
+                    Platform.runLater(() -> refreshTables());
+                }).start();
+                System.out.println("Alarm kaydedildi: ope_type=47");
+            }
+        });
         return root;
     }
 
@@ -82,7 +96,6 @@ public class MainController {
                     System.out.println("Backend bağlanamadı, direkt TCP deneniyor...");
                     intercomClient.unlockDoor();
                 }
-                logGateOpen();
             }).start();
         });
 
@@ -198,24 +211,14 @@ public class MainController {
         }).start();
     }
 
-    private void logGateOpen() {
-        new Thread(() -> {
-            GateLog log = new GateLog();
-            log.setUnlockTime(LocalDateTime.now());
-            log.setUnlockMethod("CONSOLE");
-            log.setGateId(1);
-            log.setResidentId(0);
-            gateLogDAO.insert(log);
-            Platform.runLater(() -> refreshTables());
-        }).start();
-    }
-
     private void refreshTables() {
-        List<GateLog> logs = gateLogDAO.getAll();
-        List<Alarm> alarms = alarmDAO.getUnresolved();
-        Platform.runLater(() -> {
-            gateLogTable.setItems(FXCollections.observableArrayList(logs));
-            alarmTable.setItems(FXCollections.observableArrayList(alarms));
-        });
+        new Thread(() -> {
+            List<GateLog> logs = gateLogDAO.getAll();
+            List<Alarm> alarms = alarmDAO.getUnresolved();
+            Platform.runLater(() -> {
+                gateLogTable.setItems(FXCollections.observableArrayList(logs));
+                alarmTable.setItems(FXCollections.observableArrayList(alarms));
+            });
+        }).start();
     }
 }

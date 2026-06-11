@@ -26,7 +26,7 @@ public class GateLogService {
 
     public GateLog saveConsoleUnlock(String doorId, Long deviceId, String note) {
         GateLog gateLog = new GateLog();
-        gateLog.setEventTime(java.time.LocalDateTime.now());
+        gateLog.setEventTime(java.time.ZonedDateTime.now(java.time.ZoneId.of("Europe/Istanbul")).toLocalDateTime());
         gateLog.setMethod("CONSOLE");
         gateLog.setDoorId(doorId);
         gateLog.setDeviceId(deviceId);
