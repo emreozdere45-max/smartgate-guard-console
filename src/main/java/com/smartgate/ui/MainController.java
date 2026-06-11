@@ -96,12 +96,37 @@ public class MainController {
     private VBox buildLeftPanelWithAi() {
         Label connLabel = new Label("KONTROL");
         connLabel.getStyleClass().add("section-label");
+        ComboBox<String> deviceSelector = new ComboBox<>();
+        deviceSelector.setPromptText("Cihaz seç...");
+        deviceSelector.setMaxWidth(Double.MAX_VALUE);
+        deviceSelector.getStyleClass().add("combo-box");
+
+// Cihazları yükle
+        new Thread(() -> {
+            List<com.smartgate.model.Device> devices = backendApiClient.getDevices();
+            Platform.runLater(() -> {
+                for (com.smartgate.model.Device d : devices) {
+                    deviceSelector.getItems().add(d.getId() + " | " + d.getName() + " (" + d.getIpAddress() + ")");
+                }
+                if (!deviceSelector.getItems().isEmpty()) {
+                    deviceSelector.getSelectionModel().selectFirst();
+                }
+            });
+        }).start();
 
         Button unlockBtn = new Button("🔓  Kapıyı Aç");
         unlockBtn.getStyleClass().add("btn-primary");
         unlockBtn.setMaxWidth(Double.MAX_VALUE);
         unlockBtn.setOnAction(e -> new Thread(() -> {
-            boolean success = backendApiClient.unlockDoor("1");
+            String selected = deviceSelector.getValue();
+            Long deviceId = 1L;
+            if (selected != null && selected.contains("|")) {
+                try {
+                    deviceId = Long.parseLong(selected.split("\\|")[0].trim());
+                } catch (Exception ex) { deviceId = 1L; }
+            }
+            final Long finalDeviceId = deviceId;
+            boolean success = backendApiClient.unlockDeviceDoor(finalDeviceId);
             if (!success) intercomClient.unlockDoor();
             Platform.runLater(this::refreshTables);
         }).start());
@@ -196,6 +221,7 @@ public class MainController {
 
         VBox panel = new VBox(10,
                 connLabel,
+                deviceSelector,
                 unlockBtn, handshakeBtn,
                 new Separator(),
                 refreshBtn, testAlarmBtn,
