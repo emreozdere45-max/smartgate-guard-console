@@ -7,6 +7,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Locale;
 
 public class TextToSqlService {
     private final OllamaClient ollamaClient = new OllamaClient();
@@ -32,6 +33,8 @@ public class TextToSqlService {
         - Daire bilgisi visitors tablosunda block_name ve apartment_no kolonlarindadir.
         - Bugunku ziyaretciler icin: entry_time >= CURRENT_DATE AND entry_time < CURRENT_DATE + INTERVAL '1 day'
         - Bugunku kapi loglari icin: event_time >= CURRENT_DATE AND event_time < CURRENT_DATE + INTERVAL '1 day'
+        - Aktif alarm veya cozulmemis alarm sorularinda her zaman alarms.is_resolved = false kullan.
+        - Cozulen alarm sorularinda alarms.is_resolved = true kullan.
 
         Ornekler:
         Soru: Bugun kimler giris yapti?
@@ -109,11 +112,17 @@ public class TextToSqlService {
         Soru: Aktif alarmlari listele
         SQL: SELECT alarm_time, alarm_type, severity, apartment_id, source_label FROM alarms WHERE is_resolved = false ORDER BY alarm_time DESC
 
+        Soru: Kac tane aktif alarm var?
+        SQL: SELECT COUNT(*) AS aktif_alarm_sayisi FROM alarms WHERE is_resolved = false
+
         Soru: Bugunku alarmlari goster
         SQL: SELECT alarm_time, alarm_type, severity, apartment_id, source_label, is_resolved FROM alarms WHERE alarm_time >= CURRENT_DATE AND alarm_time < CURRENT_DATE + INTERVAL '1 day' ORDER BY alarm_time DESC
 
         Soru: Cozulmemis alarmlar hangileri?
         SQL: SELECT alarm_time, alarm_type, severity, apartment_id, source_label FROM alarms WHERE is_resolved = false ORDER BY alarm_time DESC
+
+        Soru: Cozulen alarmlari listele
+        SQL: SELECT alarm_time, alarm_type, severity, apartment_id, source_label, resolved_at FROM alarms WHERE is_resolved = true ORDER BY resolved_at DESC
 
         Soru: Yangin alarmlarini listele
         SQL: SELECT alarm_time, severity, apartment_id, source_label, is_resolved FROM alarms WHERE LOWER(alarm_type) LIKE '%yangin%' OR LOWER(alarm_type) LIKE '%fire%' ORDER BY alarm_time DESC
@@ -123,6 +132,11 @@ public class TextToSqlService {
         """;
 
     public String generateSql(String userQuestion) {
+        String deterministicSql = tryBuildDeterministicSql(userQuestion);
+        if (!deterministicSql.isEmpty()) {
+            return deterministicSql;
+        }
+
         String prompt = SCHEMA_CONTEXT + "\nSoru: " + userQuestion + "\nSQL:";
         String rawResponse = ollamaClient.chat(prompt);
         return cleanSql(rawResponse);
@@ -188,5 +202,52 @@ public class TextToSqlService {
     private boolean isSafeSelect(String sql) {
         String normalized = sql.trim().toLowerCase();
         return normalized.startsWith("select") && !normalized.contains(";");
+    }
+
+    private String tryBuildDeterministicSql(String userQuestion) {
+        String question = normalizeQuestion(userQuestion);
+        boolean asksAlarm = question.contains("alarm");
+        boolean asksActiveAlarm = asksAlarm && (
+                question.contains("aktif") ||
+                question.contains("cozulmemis") ||
+                question.contains("cozulmemis") ||
+                question.contains("acik")
+        );
+
+        if (asksActiveAlarm && (question.contains("kac") || question.contains("sayisi") || question.contains("adet"))) {
+            return "SELECT COUNT(*) AS aktif_alarm_sayisi FROM alarms WHERE is_resolved = false";
+        }
+
+        if (asksActiveAlarm) {
+            return "SELECT alarm_time, alarm_type, severity, apartment_id, source_label FROM alarms WHERE is_resolved = false ORDER BY alarm_time DESC";
+        }
+
+        boolean asksResolvedAlarm = asksAlarm && (
+                question.contains("cozulen") ||
+                question.contains("cozuldu") ||
+                question.contains("kapali")
+        );
+
+        if (asksResolvedAlarm && (question.contains("kac") || question.contains("sayisi") || question.contains("adet"))) {
+            return "SELECT COUNT(*) AS cozulen_alarm_sayisi FROM alarms WHERE is_resolved = true";
+        }
+
+        if (asksResolvedAlarm) {
+            return "SELECT alarm_time, alarm_type, severity, apartment_id, source_label, resolved_at FROM alarms WHERE is_resolved = true ORDER BY resolved_at DESC";
+        }
+
+        return "";
+    }
+
+    private String normalizeQuestion(String value) {
+        return value == null ? "" : value
+                .toLowerCase(Locale.forLanguageTag("tr-TR"))
+                .replace('ı', 'i')
+                .replace('İ', 'i')
+                .replace('ğ', 'g')
+                .replace('ü', 'u')
+                .replace('ş', 's')
+                .replace('ö', 'o')
+                .replace('ç', 'c');
     }
 }
