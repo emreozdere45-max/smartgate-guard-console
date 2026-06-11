@@ -1,0 +1,16 @@
+backend/src/main/java/com/smartgate/backend/controller/VisitorController.java
+backend/src/main/java/com/smartgate/backend/dto/VisitorRequest.java
+backend/src/main/java/com/smartgate/backend/dto/VisitorResponse.java
+backend/src/main/java/com/smartgate/backend/entity/Visitor.java
+backend/src/main/java/com/smartgate/backend/repository/VisitorRepository.java
+backend/src/main/java/com/smartgate/backend/service/VisitorService.java
+backend/src/main/resources/schema.sql
+database/schema.sql
+src/main/java/com/smartgate/BackendApiClient.java
+src/main/java/com/smartgate/database/AlarmDAO.java
+src/main/java/com/smartgate/llm/OllamaClient.java
+src/main/java/com/smartgate/llm/TextToSqlService.java
+src/main/java/com/smartgate/model/Alarm.java
+src/main/java/com/smartgate/model/Visitor.java
+src/main/java/com/smartgate/ui/MainController.java
+src/main/resources/styles/app.css
