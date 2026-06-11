@@ -77,6 +77,30 @@ public class BackendApiClient {
         }
     }
 
+    public String put(String endpoint) {
+        try {
+            URL url = new URL(baseUrl + endpoint);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("PUT");
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(10000);
+
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(conn.getInputStream())
+            );
+            StringBuilder response = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                response.append(line);
+            }
+            reader.close();
+            return response.toString();
+        } catch (Exception e) {
+            System.err.println("Backend API PUT hatasi: " + e.getMessage());
+            return null;
+        }
+    }
+
     public boolean unlockDoor(String deviceId) {
         String body = "{\"deviceId\":\"" + deviceId + "\",\"method\":\"CONSOLE\"}";
         String response = post("/door/unlock", body);
@@ -101,6 +125,26 @@ public class BackendApiClient {
         body.addProperty("visitReason", visitReason);
 
         String response = post("/visitors", gson.toJson(body));
+        return response == null ? null : gson.fromJson(response, Visitor.class);
+    }
+
+    public Visitor approveVisitor(Long id) {
+        return updateVisitorStatus(id, "approve");
+    }
+
+    public Visitor rejectVisitor(Long id) {
+        return updateVisitorStatus(id, "reject");
+    }
+
+    public Visitor exitVisitor(Long id) {
+        return updateVisitorStatus(id, "exit");
+    }
+
+    private Visitor updateVisitorStatus(Long id, String action) {
+        if (id == null) {
+            return null;
+        }
+        String response = put("/visitors/" + id + "/" + action);
         return response == null ? null : gson.fromJson(response, Visitor.class);
     }
 }

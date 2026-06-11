@@ -197,7 +197,50 @@ public class MainController {
                 new javafx.beans.property.SimpleStringProperty(data.getValue().getStatus()));
         visitorStatusCol.setPrefWidth(110);
 
-        visitorTable.getColumns().addAll(visitorTimeCol, visitorNameCol, visitorTypeCol, visitorApartmentCol, visitorStatusCol);
+        TableColumn<Visitor, Void> visitorActionCol = new TableColumn<>("Islem");
+        visitorActionCol.setCellFactory(column -> new TableCell<>() {
+            private final Button approveButton = new Button("Onayla");
+            private final Button rejectButton = new Button("Reddet");
+            private final Button exitButton = new Button("Cikis");
+            private final HBox actions = new HBox(6, approveButton, rejectButton, exitButton);
+
+            {
+                approveButton.getStyleClass().add("btn-success");
+                rejectButton.getStyleClass().add("btn-danger");
+                exitButton.getStyleClass().add("btn-secondary-small");
+
+                approveButton.setOnAction(e -> updateVisitorStatus(getCurrentVisitor(), "approve"));
+                rejectButton.setOnAction(e -> updateVisitorStatus(getCurrentVisitor(), "reject"));
+                exitButton.setOnAction(e -> updateVisitorStatus(getCurrentVisitor(), "exit"));
+            }
+
+            @Override
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+                Visitor visitor = getCurrentVisitor();
+                if (empty || visitor == null) {
+                    setGraphic(null);
+                    return;
+                }
+
+                String status = visitor.getStatus() == null ? "" : visitor.getStatus();
+                approveButton.setDisable("APPROVED".equals(status) || "EXITED".equals(status));
+                rejectButton.setDisable("REJECTED".equals(status) || "EXITED".equals(status));
+                exitButton.setDisable("EXITED".equals(status));
+                setGraphic(actions);
+            }
+
+            private Visitor getCurrentVisitor() {
+                int index = getIndex();
+                if (index < 0 || index >= getTableView().getItems().size()) {
+                    return null;
+                }
+                return getTableView().getItems().get(index);
+            }
+        });
+        visitorActionCol.setPrefWidth(220);
+
+        visitorTable.getColumns().addAll(visitorTimeCol, visitorNameCol, visitorTypeCol, visitorApartmentCol, visitorStatusCol, visitorActionCol);
         visitorTable.setPrefHeight(180);
         visitorTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
 
@@ -283,6 +326,29 @@ public class MainController {
                 blockInput.clear();
                 apartmentInput.clear();
                 visitReasonInput.clear();
+                refreshTables();
+            });
+        }).start();
+    }
+
+    private void updateVisitorStatus(Visitor visitor, String action) {
+        if (visitor == null || visitor.getId() == null) {
+            return;
+        }
+
+        new Thread(() -> {
+            Visitor updatedVisitor = switch (action) {
+                case "approve" -> backendApiClient.approveVisitor(visitor.getId());
+                case "reject" -> backendApiClient.rejectVisitor(visitor.getId());
+                case "exit" -> backendApiClient.exitVisitor(visitor.getId());
+                default -> null;
+            };
+
+            Platform.runLater(() -> {
+                if (updatedVisitor == null) {
+                    llmOutput.setText("Ziyaretci durumu guncellenemedi. Backend calisiyor mu?");
+                    return;
+                }
                 refreshTables();
             });
         }).start();
