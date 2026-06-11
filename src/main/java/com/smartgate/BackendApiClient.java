@@ -10,6 +10,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import com.smartgate.model.Visitor;
+import com.smartgate.model.Device;
 
 public class BackendApiClient {
 
@@ -146,5 +147,26 @@ public class BackendApiClient {
         }
         String response = put("/visitors/" + id + "/" + action);
         return response == null ? null : gson.fromJson(response, Visitor.class);
+    }
+    public List<Device> getDevices() {
+        String response = get("/devices");
+        if (response == null || response.isBlank()) return Collections.emptyList();
+        Device[] devices = gson.fromJson(response, Device[].class);
+        return devices == null ? Collections.emptyList() : Arrays.asList(devices);
+    }
+
+    public Device createDevice(String name, String ipAddress, int port, String location) {
+        JsonObject body = new JsonObject();
+        body.addProperty("name", name);
+        body.addProperty("ipAddress", ipAddress);
+        body.addProperty("commandPort", port);
+        body.addProperty("location", location);
+        String response = post("/devices", gson.toJson(body));
+        return response == null ? null : gson.fromJson(response, Device.class);
+    }
+
+    public boolean unlockDeviceDoor(Long deviceId) {
+        String response = post("/devices/" + deviceId + "/door/unlock", "{}");
+        return response != null && response.contains("success");
     }
 }
