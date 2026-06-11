@@ -24,6 +24,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
+import com.smartgate.model.Device;
 
 public class MainController {
     private final BackendApiClient backendApiClient = new BackendApiClient();
@@ -40,7 +41,11 @@ public class MainController {
     private TextField blockInput;
     private TextField apartmentInput;
     private TextField visitReasonInput;
-
+    private TableView<Device> deviceTable;
+    private TextField deviceNameInput;
+    private TextField deviceIpInput;
+    private TextField devicePortInput;
+    private TextField deviceLocationInput;
     // AI popup
     private VBox aiPopup;
     private TextField aiInput;
@@ -223,7 +228,9 @@ public class MainController {
         // ── Alt satır: Ziyaretçi Yönetimi ──
         VBox visitorsBox = buildTableBox("👥  Ziyaretçi Kayıtları", buildVisitorSection());
 
-        VBox center = new VBox(12, topRow, visitorsBox);
+        VBox devicesBox = buildTableBox("🖥  Cihaz Yönetimi", buildDeviceSection());
+
+        VBox center = new VBox(12, topRow, visitorsBox, devicesBox);
         center.setPadding(new Insets(16));
 
         ScrollPane scroll = new ScrollPane(center);
@@ -363,6 +370,11 @@ public class MainController {
         apartmentInput = new TextField();
         apartmentInput.setPromptText("Daire");
         apartmentInput.setPrefWidth(70);
+        apartmentInput.textProperty().addListener((obs, oldVal, newVal) -> {
+            if (!newVal.matches("\\d*")) {
+                apartmentInput.setText(newVal.replaceAll("[^\\d]", ""));
+            }
+        });
 
         visitReasonInput = new TextField();
         visitReasonInput.setPromptText("Ziyaret sebebi");
@@ -475,13 +487,7 @@ public class MainController {
     private void startIntercomListener() {
         intercomClient.startListening(packet -> {
             if (packet.getOpe_type() == 47) {
-                Alarm alarm = new Alarm();
-                alarm.setAlarmTime(ZonedDateTime.now(ZoneId.of("Europe/Istanbul")).toLocalDateTime());
-                alarm.setAlarmType(getAlarmTypeName(packet.getDataInt()));
-                alarm.setSeverity("CRITICAL");
-                alarm.setApartmentNo(packet.getDataString() != null ? packet.getDataString() : "Bilinmiyor");
-                alarm.setSourceLabel("İnterkom alarm paneli");
-                alarm.setResolved(false);
+                Alarm alarm = createAlarmFromPacket(packet);
                 new Thread(() -> {
                     alarmDAO.insert(alarm);
                     Platform.runLater(() -> {
@@ -519,7 +525,7 @@ public class MainController {
     private void triggerTestAlarm() {
         Alarm alarm = new Alarm();
         alarm.setAlarmTime(ZonedDateTime.now(ZoneId.of("Europe/Istanbul")).toLocalDateTime());
-        alarm.setAlarmType("YANGIN");
+        alarm.setAlarmType("FIRE");
         alarm.setSeverity("CRITICAL");
         alarm.setApartmentNo("15B");
         alarm.setSourceLabel("Test yangın sensörü");
@@ -568,10 +574,12 @@ public class MainController {
             List<GateLog> logs = gateLogDAO.getAll();
             List<Alarm> alarms = alarmDAO.getUnresolved();
             List<Visitor> visitors = backendApiClient.getVisitors();
+            List<Device> devices = backendApiClient.getDevices();
             Platform.runLater(() -> {
                 gateLogTable.setItems(FXCollections.observableArrayList(logs));
                 alarmTable.setItems(FXCollections.observableArrayList(alarms));
                 visitorTable.setItems(FXCollections.observableArrayList(visitors));
+                deviceTable.setItems(FXCollections.observableArrayList(devices));
             });
         }).start();
     }
@@ -579,5 +587,155 @@ public class MainController {
     private String formatApiTime(String value) {
         if (value == null || value.length() < 16) return "";
         return value.substring(0, 16).replace('T', ' ');
+    }
+    private Alarm createAlarmFromPacket(com.smartgate.network.ComPackageModel packet) {
+        Alarm alarm = new Alarm();
+        alarm.setAlarmTime(ZonedDateTime.now(ZoneId.of("Europe/Istanbul")).toLocalDateTime());
+
+        String rawData = packet.getDataString() != null ? packet.getDataString().trim() : "";
+        String[] parts = rawData.split("\\|");
+
+        String alarmType = parts.length > 0 && !parts[0].isBlank()
+                ? normalizeAlarmType(parts[0]) : "UNKNOWN";
+        String apartmentNo = parts.length > 1 && !parts[1].isBlank()
+                ? parts[1].trim() : "Bilinmiyor";
+        String sourceLabel = parts.length > 2 && !parts[2].isBlank()
+                ? parts[2].trim() : getDefaultSourceLabel(alarmType);
+
+        alarm.setAlarmType(alarmType);
+        alarm.setApartmentNo(apartmentNo);
+        alarm.setSourceLabel(sourceLabel);
+        alarm.setSeverity(getSeverityForAlarmType(alarmType));
+        alarm.setResolved(false);
+        return alarm;
+    }
+
+    private String normalizeAlarmType(String rawType) {
+        String type = rawType.trim().toUpperCase();
+        return switch (type) {
+            case "YANGIN", "FIRE" -> "FIRE";
+            case "GAZ", "GAS" -> "GAS";
+            case "SU", "SU_BASKINI", "FLOOD" -> "FLOOD";
+            case "HAREKET", "PIR", "MOTION" -> "MOTION";
+            case "KAPI", "PENCERE", "DOOR", "WINDOW", "DOOR_WINDOW" -> "DOOR_WINDOW";
+            default -> "UNKNOWN";
+        };
+    }
+
+    private String getSeverityForAlarmType(String alarmType) {
+        return switch (alarmType) {
+            case "FIRE", "GAS" -> "CRITICAL";
+            case "FLOOD" -> "HIGH";
+            case "MOTION", "DOOR_WINDOW" -> "MEDIUM";
+            default -> "HIGH";
+        };
+    }
+
+    private String getDefaultSourceLabel(String alarmType) {
+        return switch (alarmType) {
+            case "FIRE" -> "Yangın sensörü";
+            case "GAS" -> "Gaz kaçak sensörü";
+            case "FLOOD" -> "Su baskını sensörü";
+            case "MOTION" -> "Hareket sensörü";
+            case "DOOR_WINDOW" -> "Kapı/Pencere sensörü";
+            default -> "Bilinmeyen alarm kaynağı";
+        };
+    }
+    private VBox buildDeviceSection() {
+        deviceNameInput = new TextField();
+        deviceNameInput.setPromptText("Cihaz adı (örn: Blok A Girişi)");
+
+        deviceIpInput = new TextField();
+        deviceIpInput.setPromptText("IP Adresi (örn: 192.168.1.100)");
+        deviceIpInput.setPrefWidth(150);
+
+        devicePortInput = new TextField("5432");
+        devicePortInput.setPrefWidth(70);
+        devicePortInput.textProperty().addListener((obs, oldVal, newVal) -> {
+            if (!newVal.matches("\\d*")) devicePortInput.setText(newVal.replaceAll("[^\\d]", ""));
+        });
+
+        deviceLocationInput = new TextField();
+        deviceLocationInput.setPromptText("Konum (örn: Ana giriş)");
+
+        Button saveBtn = new Button("➕ Cihaz Ekle");
+        saveBtn.getStyleClass().add("btn-primary");
+        saveBtn.setOnAction(e -> saveDevice());
+
+        HBox form = new HBox(8, deviceNameInput, deviceIpInput, devicePortInput, deviceLocationInput, saveBtn);
+        HBox.setHgrow(deviceNameInput, Priority.ALWAYS);
+        HBox.setHgrow(deviceLocationInput, Priority.ALWAYS);
+        form.setAlignment(Pos.CENTER_LEFT);
+
+        deviceTable = new TableView<>();
+        deviceTable.setPlaceholder(new Label("Kayıtlı cihaz yok"));
+        deviceTable.setPrefHeight(180);
+
+        TableColumn<Device, String> nameCol = new TableColumn<>("Cihaz Adı");
+        nameCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(d.getValue().getName()));
+
+        TableColumn<Device, String> ipCol = new TableColumn<>("IP Adresi");
+        ipCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(d.getValue().getIpAddress()));
+        ipCol.setPrefWidth(130);
+
+        TableColumn<Device, String> portCol = new TableColumn<>("Port");
+        portCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                String.valueOf(d.getValue().getCommandPort())
+        ));
+        portCol.setPrefWidth(60);
+
+        TableColumn<Device, String> locationCol = new TableColumn<>("Konum");
+        locationCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(d.getValue().getLocation()));
+
+        TableColumn<Device, Void> actionCol = new TableColumn<>("");
+        actionCol.setCellFactory(col -> new TableCell<>() {
+            private final Button unlockBtn = new Button("🔓 Aç");
+            {
+                unlockBtn.getStyleClass().add("btn-primary");
+                unlockBtn.setOnAction(e -> {
+                    Device device = getTableView().getItems().get(getIndex());
+                    new Thread(() -> {
+                        boolean success = backendApiClient.unlockDeviceDoor(device.getId());
+                        Platform.runLater(() -> {
+                            if (success) refreshTables();
+                        });
+                    }).start();
+                });
+            }
+            @Override protected void updateItem(Void v, boolean empty) {
+                super.updateItem(v, empty);
+                setGraphic(empty ? null : unlockBtn);
+            }
+        });
+        actionCol.setPrefWidth(80);
+
+        deviceTable.getColumns().addAll(nameCol, ipCol, portCol, locationCol, actionCol);
+        deviceTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+
+        return new VBox(8, form, deviceTable);
+    }
+
+    private void saveDevice() {
+        String name = deviceNameInput.getText().trim();
+        String ip = deviceIpInput.getText().trim();
+        String portStr = devicePortInput.getText().trim();
+        String location = deviceLocationInput.getText().trim();
+
+        if (name.isEmpty() || ip.isEmpty()) return;
+
+        int port = portStr.isEmpty() ? 5432 : Integer.parseInt(portStr);
+
+        new Thread(() -> {
+            Device device = backendApiClient.createDevice(name, ip, port, location);
+            Platform.runLater(() -> {
+                if (device != null) {
+                    deviceNameInput.clear();
+                    deviceIpInput.clear();
+                    devicePortInput.setText("5432");
+                    deviceLocationInput.clear();
+                    refreshTables();
+                }
+            });
+        }).start();
     }
 }
