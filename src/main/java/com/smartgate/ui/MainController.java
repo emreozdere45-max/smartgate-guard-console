@@ -475,13 +475,7 @@ public class MainController {
     private void startIntercomListener() {
         intercomClient.startListening(packet -> {
             if (packet.getOpe_type() == 47) {
-                Alarm alarm = new Alarm();
-                alarm.setAlarmTime(ZonedDateTime.now(ZoneId.of("Europe/Istanbul")).toLocalDateTime());
-                alarm.setAlarmType(getAlarmTypeName(packet.getDataInt()));
-                alarm.setSeverity("CRITICAL");
-                alarm.setApartmentNo(packet.getDataString() != null ? packet.getDataString() : "Bilinmiyor");
-                alarm.setSourceLabel("İnterkom alarm paneli");
-                alarm.setResolved(false);
+                Alarm alarm = createAlarmFromPacket(packet);
                 new Thread(() -> {
                     alarmDAO.insert(alarm);
                     Platform.runLater(() -> {
@@ -519,7 +513,7 @@ public class MainController {
     private void triggerTestAlarm() {
         Alarm alarm = new Alarm();
         alarm.setAlarmTime(ZonedDateTime.now(ZoneId.of("Europe/Istanbul")).toLocalDateTime());
-        alarm.setAlarmType("YANGIN");
+        alarm.setAlarmType("FIRE");
         alarm.setSeverity("CRITICAL");
         alarm.setApartmentNo("15B");
         alarm.setSourceLabel("Test yangın sensörü");
@@ -579,5 +573,58 @@ public class MainController {
     private String formatApiTime(String value) {
         if (value == null || value.length() < 16) return "";
         return value.substring(0, 16).replace('T', ' ');
+    }
+    private Alarm createAlarmFromPacket(com.smartgate.network.ComPackageModel packet) {
+        Alarm alarm = new Alarm();
+        alarm.setAlarmTime(ZonedDateTime.now(ZoneId.of("Europe/Istanbul")).toLocalDateTime());
+
+        String rawData = packet.getDataString() != null ? packet.getDataString().trim() : "";
+        String[] parts = rawData.split("\\|");
+
+        String alarmType = parts.length > 0 && !parts[0].isBlank()
+                ? normalizeAlarmType(parts[0]) : "UNKNOWN";
+        String apartmentNo = parts.length > 1 && !parts[1].isBlank()
+                ? parts[1].trim() : "Bilinmiyor";
+        String sourceLabel = parts.length > 2 && !parts[2].isBlank()
+                ? parts[2].trim() : getDefaultSourceLabel(alarmType);
+
+        alarm.setAlarmType(alarmType);
+        alarm.setApartmentNo(apartmentNo);
+        alarm.setSourceLabel(sourceLabel);
+        alarm.setSeverity(getSeverityForAlarmType(alarmType));
+        alarm.setResolved(false);
+        return alarm;
+    }
+
+    private String normalizeAlarmType(String rawType) {
+        String type = rawType.trim().toUpperCase();
+        return switch (type) {
+            case "YANGIN", "FIRE" -> "FIRE";
+            case "GAZ", "GAS" -> "GAS";
+            case "SU", "SU_BASKINI", "FLOOD" -> "FLOOD";
+            case "HAREKET", "PIR", "MOTION" -> "MOTION";
+            case "KAPI", "PENCERE", "DOOR", "WINDOW", "DOOR_WINDOW" -> "DOOR_WINDOW";
+            default -> "UNKNOWN";
+        };
+    }
+
+    private String getSeverityForAlarmType(String alarmType) {
+        return switch (alarmType) {
+            case "FIRE", "GAS" -> "CRITICAL";
+            case "FLOOD" -> "HIGH";
+            case "MOTION", "DOOR_WINDOW" -> "MEDIUM";
+            default -> "HIGH";
+        };
+    }
+
+    private String getDefaultSourceLabel(String alarmType) {
+        return switch (alarmType) {
+            case "FIRE" -> "Yangın sensörü";
+            case "GAS" -> "Gaz kaçak sensörü";
+            case "FLOOD" -> "Su baskını sensörü";
+            case "MOTION" -> "Hareket sensörü";
+            case "DOOR_WINDOW" -> "Kapı/Pencere sensörü";
+            default -> "Bilinmeyen alarm kaynağı";
+        };
     }
 }
