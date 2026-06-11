@@ -8,6 +8,7 @@ services:
       POSTGRES_DB: smartgate_db
       POSTGRES_USER: smartgate_user
       POSTGRES_PASSWORD: smartgate_password
+      TZ: Europe/Istanbul
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
@@ -32,6 +33,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: smartgate_password
       SMARTGATE_INTERCOM_HOST: 192.168.1.100
       SMARTGATE_INTERCOM_PORT: 5432
+      TZ: Europe/Istanbul
     depends_on:
       - postgres-db
     restart: unless-stopped
