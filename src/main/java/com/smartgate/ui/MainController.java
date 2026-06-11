@@ -19,7 +19,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.scene.text.Text;
 import javafx.util.Duration;
-
+import com.smartgate.network.VideoStreamReceiver;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -46,6 +46,9 @@ public class MainController {
     private TextField deviceIpInput;
     private TextField devicePortInput;
     private TextField deviceLocationInput;
+
+    private javafx.scene.image.ImageView videoView;
+    private VideoStreamReceiver videoStreamReceiver;
     // AI popup
     private VBox aiPopup;
     private TextField aiInput;
@@ -243,17 +246,31 @@ public class MainController {
     }
 
     private ScrollPane buildCenterPanel() {
-        // ── Üst satır: Kapı Logları | Aktif Alarmlar ──
+        // ── Üst satır: Kapı Logları | Aktif Alarmlar | Video ──
         VBox logsBox = buildTableBox("📋  Kapı Giriş Kayıtları", buildGateLogTable());
         VBox alarmsBox = buildTableBox("🚨  Aktif Alarmlar", buildAlarmTable());
 
-        HBox topRow = new HBox(12, logsBox, alarmsBox);
+        // Video panel
+        videoView = new javafx.scene.image.ImageView();
+        videoView.setFitWidth(320);
+        videoView.setFitHeight(240);
+
+        Label videoPlaceholder = new Label("Kamera bağlantısı bekleniyor...");
+        videoPlaceholder.setStyle("-fx-text-fill: #484f58; -fx-font-size: 12px;");
+
+        StackPane videoPane = new StackPane(videoView, videoPlaceholder);
+        videoPane.setStyle("-fx-background-color: #000000; -fx-min-height: 240px;");
+        videoPane.setAlignment(Pos.CENTER);
+
+        VBox videoBox = buildTableBox("📹  Canlı Görüntü", videoPane);
+        videoBox.setPrefWidth(340);
+
+        HBox topRow = new HBox(12, logsBox, alarmsBox, videoBox);
         HBox.setHgrow(logsBox, Priority.ALWAYS);
         HBox.setHgrow(alarmsBox, Priority.ALWAYS);
 
         // ── Alt satır: Ziyaretçi Yönetimi ──
         VBox visitorsBox = buildTableBox("👥  Ziyaretçi Kayıtları", buildVisitorSection());
-
         VBox devicesBox = buildTableBox("🖥  Cihaz Yönetimi", buildDeviceSection());
 
         VBox center = new VBox(12, topRow, visitorsBox, devicesBox);
