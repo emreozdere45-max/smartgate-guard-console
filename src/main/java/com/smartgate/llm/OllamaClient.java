@@ -13,7 +13,14 @@ import java.net.URL;
 public class OllamaClient {
 
     private String getOllamaUrl() {
-        return "http://" + ConfigManager.get("OLLAMA_HOST", "192.168.36.29") + ":11434";
+        String host = ConfigManager.get("OLLAMA_HOST", "localhost").trim();
+        if (!host.startsWith("http://") && !host.startsWith("https://")) {
+            host = "http://" + host;
+        }
+        if (!host.matches("^https?://[^/]+:\\d+.*")) {
+            host = host + ":11434";
+        }
+        return host.endsWith("/") ? host.substring(0, host.length() - 1) : host;
     }
 
     private static final String MODEL = ConfigManager.get("OLLAMA_MODEL", "gemma4:e4b");
