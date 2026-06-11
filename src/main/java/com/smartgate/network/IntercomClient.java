@@ -15,6 +15,7 @@ public class IntercomClient {
     private final String intercomIp;
     private final Gson gson = new Gson();
     private boolean isListening = false;
+    private ServerSocket activeServerSocket = null;
 
     public IntercomClient(String intercomIp) {
         this.intercomIp = intercomIp;
@@ -55,32 +56,37 @@ public class IntercomClient {
         sendCommand(packet);
     }
 
+    public void stopListening() {
+        isListening = false;
+        if (activeServerSocket != null) {
+            try {
+                activeServerSocket.close();
+            } catch (Exception ignored) {}
+        }
+    }
+
     public void startListening(Consumer<ComPackageModel> onPacketReceived) {
         if (isListening) return;
         isListening = true;
 
         new Thread(() -> {
-            ServerSocket serverSocket = null;
             try {
-                serverSocket = new ServerSocket();
-                serverSocket.setReuseAddress(true);
-                serverSocket.bind(new InetSocketAddress(INTERCOM_LISTEN_PORT));
+                activeServerSocket = new ServerSocket();
+                activeServerSocket.setReuseAddress(true);
+                activeServerSocket.bind(new InetSocketAddress(INTERCOM_LISTEN_PORT));
                 System.out.println("İnterkom dinleniyor: port " + INTERCOM_LISTEN_PORT);
 
-                while (true) {
-                    try (Socket client = serverSocket.accept()) {
+                while (isListening) {
+                    try (Socket client = activeServerSocket.accept()) {
                         InputStream is = client.getInputStream();
                         byte[] header = new byte[4];
                         int read = is.read(header, 0, 4);
                         if (read < 4) continue;
 
-                        // Video frame mi kontrol et
                         if (header[0] == (byte)0xDE && header[1] == (byte)0xAD
                                 && header[2] == (byte)0xBE && header[3] == (byte)0xEF) {
                             System.out.println("Video frame alındı.");
-                            // Video işleme ileride eklenecek
                         } else {
-                            // JSON paket — alarm veya komut
                             BufferedReader reader = new BufferedReader(
                                     new InputStreamReader(is));
                             String rest = reader.readLine();
@@ -91,16 +97,12 @@ public class IntercomClient {
                             onPacketReceived.accept(packet);
                         }
                     } catch (Exception e) {
-                        System.err.println("Client hatası: " + e.getMessage());
+                        if (isListening) System.err.println("Client hatası: " + e.getMessage());
                     }
                 }
             } catch (Exception e) {
-                System.err.println("Dinleme hatası: " + e.getMessage());
+                if (isListening) System.err.println("Dinleme hatası: " + e.getMessage());
                 isListening = false;
-            } finally {
-                if (serverSocket != null) {
-                    try { serverSocket.close(); } catch (Exception ignored) {}
-                }
             }
         }).start();
     }
