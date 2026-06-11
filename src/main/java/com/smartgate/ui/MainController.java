@@ -363,6 +363,11 @@ public class MainController {
         apartmentInput = new TextField();
         apartmentInput.setPromptText("Daire");
         apartmentInput.setPrefWidth(70);
+        apartmentInput.textProperty().addListener((obs, oldVal, newVal) -> {
+            if (!newVal.matches("\\d*")) {
+                apartmentInput.setText(newVal.replaceAll("[^\\d]", ""));
+            }
+        });
 
         visitReasonInput = new TextField();
         visitReasonInput.setPromptText("Ziyaret sebebi");

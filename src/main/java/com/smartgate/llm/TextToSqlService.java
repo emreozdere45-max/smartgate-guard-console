@@ -7,6 +7,8 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
 
 public class TextToSqlService {
     private final OllamaClient ollamaClient = new OllamaClient();
@@ -130,15 +132,14 @@ public class TextToSqlService {
 
     public String generateAndExecute(String userQuestion) {
         String sql = generateSql(userQuestion);
-        if (sql.isEmpty()) {
-            return "SQL uretilemedi.";
-        }
-        if (!isSafeSelect(sql)) {
-            return "Sadece SELECT sorgulari calistirilabilir.";
+
+        if (sql.isEmpty() || sql.toLowerCase().contains("ollama")) {
+            return "Ollama bağlantısı kurulamadı.";
         }
 
-        StringBuilder result = new StringBuilder();
-        result.append("SQL: ").append(sql).append("\n\nSonuclar:\n");
+        if (!sql.trim().toLowerCase().startsWith("select")) {
+            return "Sadece SELECT sorguları çalıştırılabilir.";
+        }
 
         try (Connection conn = DatabaseManager.getConnection();
              Statement stmt = conn.createStatement();
@@ -147,34 +148,41 @@ public class TextToSqlService {
             ResultSetMetaData meta = rs.getMetaData();
             int colCount = meta.getColumnCount();
 
+            List<String[]> rows = new ArrayList<>();
+            String[] headers = new String[colCount];
             for (int i = 1; i <= colCount; i++) {
-                result.append(meta.getColumnName(i));
-                if (i < colCount) {
-                    result.append(" | ");
-                }
+                headers[i-1] = meta.getColumnName(i);
             }
-            result.append("\n").append("-".repeat(60)).append("\n");
 
-            int rowCount = 0;
             while (rs.next()) {
+                String[] row = new String[colCount];
                 for (int i = 1; i <= colCount; i++) {
-                    result.append(rs.getString(i));
-                    if (i < colCount) {
-                        result.append(" | ");
-                    }
+                    row[i-1] = rs.getString(i) != null ? rs.getString(i) : "-";
                 }
-                result.append("\n");
-                rowCount++;
+                rows.add(row);
             }
 
-            if (rowCount == 0) {
-                result.append("Sonuc bulunamadi.");
+            if (rows.isEmpty()) {
+                return "Sonuç bulunamadı.";
             }
+
+            // Türkçe yorum için Ollama'ya sor
+            StringBuilder dataStr = new StringBuilder();
+            dataStr.append(String.join(" | ", headers)).append("\n");
+            for (String[] row : rows) {
+                dataStr.append(String.join(" | ", row)).append("\n");
+            }
+
+            String interpretPrompt = "Kullanıcı şunu sordu: \"" + userQuestion + "\"\n" +
+                    "Veritabanından şu veri geldi:\n" + dataStr +
+                    "\nBu veriyi kullanıcıya Türkçe, kısa ve net bir şekilde açıkla. " +
+                    "SQL veya teknik detay yazma, sadece cevabı ver.";
+
+            return ollamaClient.chat(interpretPrompt);
+
         } catch (SQLException e) {
-            result.append("Sorgu hatasi: ").append(e.getMessage());
+            return "Sorgu çalıştırılamadı: " + e.getMessage();
         }
-
-        return result.toString();
     }
 
     private String cleanSql(String raw) {
