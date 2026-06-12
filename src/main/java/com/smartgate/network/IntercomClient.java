@@ -16,6 +16,7 @@ public class IntercomClient {
     private final Gson gson = new Gson();
     private boolean isListening = false;
     private ServerSocket activeServerSocket = null;
+    private java.util.function.Consumer<byte[]> videoFrameListener = null;
 
     public IntercomClient(String intercomIp) {
         this.intercomIp = intercomIp;
@@ -64,6 +65,9 @@ public class IntercomClient {
             } catch (Exception ignored) {}
         }
     }
+    public void setVideoFrameListener(java.util.function.Consumer<byte[]> listener) {
+        this.videoFrameListener = listener;
+    }
 
     public void startListening(Consumer<ComPackageModel> onPacketReceived) {
         if (isListening) return;
@@ -85,7 +89,25 @@ public class IntercomClient {
 
                         if (header[0] == (byte)0xDE && header[1] == (byte)0xAD
                                 && header[2] == (byte)0xBE && header[3] == (byte)0xEF) {
-                            System.out.println("Video frame alındı.");
+                            // Video frame — boyutu oku
+                            byte[] sizeBuf = new byte[3];
+                            is.read(sizeBuf, 0, 3);
+                            int length = ((sizeBuf[0] & 0xFF) << 16)
+                                    | ((sizeBuf[1] & 0xFF) << 8)
+                                    | (sizeBuf[2] & 0xFF);
+                            if (length > 0 && length < 10_000_000) {
+                                byte[] frameData = new byte[length];
+                                int total = 0;
+                                while (total < length) {
+                                    int r = is.read(frameData, total, length - total);
+                                    if (r < 0) break;
+                                    total += r;
+                                }
+                                if (videoFrameListener != null) {
+                                    videoFrameListener.accept(frameData);
+                                }
+                                System.out.println("Video frame alındı: " + length + " bytes");
+                            }
                         } else {
                             BufferedReader reader = new BufferedReader(
                                     new InputStreamReader(is));

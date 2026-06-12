@@ -23,6 +23,9 @@ public class App extends Application {
         stage.setScene(scene);
 
         stage.setOnCloseRequest(e -> {
+            if (controller.getVideoStreamReceiver() != null) {
+                controller.getVideoStreamReceiver().stop();
+            }
             intercomClient.stopListening();
             Platform.exit();
             System.exit(0);
