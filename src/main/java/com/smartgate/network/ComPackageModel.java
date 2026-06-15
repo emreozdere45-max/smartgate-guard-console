@@ -6,6 +6,8 @@ public class ComPackageModel {
     private int dataInt;
     private String dataString;
     private SecurityInfo guvenlik;
+    private java.util.List<Object> daires;
+    private java.util.List<Object> guvenliks;
 
     public int getOpe_type() {
         return ope_type;

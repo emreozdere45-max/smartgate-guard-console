@@ -474,18 +474,27 @@ public class MainController {
 
     private void startIntercomListener() {
         intercomClient.startListening(packet -> {
-            if (packet.getOpe_type() == IntercomClient.OPERATION_ALARM_TRIGGERED) {
-                Alarm alarm = createAlarmFromPacket(packet);
-                new Thread(() -> {
-                    alarmDAO.insert(alarm);
-                    Platform.runLater(() -> {
-                        refreshTables();
-                        showAlarmPopup(alarm);
-                    });
-                }).start();
+            System.out.println("Paket geldi: ope_type=" + packet.getOpe_type());
+
+            if (packet.getOpe_type() == IntercomClient.OPERATION_HANDSHAKE_GUVENLIK_RESPONSE) {
+                System.out.println("✅ Cihaz bağlantısı onaylandı!");
+                com.google.gson.Gson gson = new com.google.gson.Gson();
+                System.out.println("RAW PAKET: " + gson.toJson(packet));
+                Platform.runLater(() -> {
+                    System.out.println("Cihaz bağlandı, daireler yükleniyor...");
+                });
             }
+
             if (packet.getOpe_type() == IntercomClient.OPERATION_ARAMA_REQUEST) {
                 Platform.runLater(() -> showIncomingCallPopup(packet));
+            }
+
+            if (packet.getOpe_type() == IntercomClient.OPERATION_HANDSHAKE_GUVENLIK_RESPONSE) {
+                System.out.println("✅ Cihaz bağlantısı onaylandı!");
+                Platform.runLater(() -> {
+                    // Sol paneldeki durum göstergesi güncellenebilir
+                    System.out.println("Cihaz bağlandı, daireler yükleniyor...");
+                });
             }
         });
     }
