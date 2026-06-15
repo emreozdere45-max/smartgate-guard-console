@@ -46,7 +46,7 @@ public class MainController {
     private TextField deviceIpInput;
     private TextField devicePortInput;
     private TextField deviceLocationInput;
-
+    private ComboBox<String> deviceSelector;
     private javafx.scene.image.ImageView videoView;
     private VideoStreamReceiver videoStreamReceiver;
     // AI popup
@@ -100,7 +100,7 @@ public class MainController {
     private VBox buildLeftPanelWithAi() {
         Label connLabel = new Label("KONTROL");
         connLabel.getStyleClass().add("section-label");
-        ComboBox<String> deviceSelector = new ComboBox<>();
+        deviceSelector = new ComboBox<>();
         deviceSelector.setPromptText("Cihaz seç...");
         deviceSelector.setMaxWidth(Double.MAX_VALUE);
         deviceSelector.getStyleClass().add("combo-box");
@@ -115,6 +115,9 @@ public class MainController {
                 if (!deviceSelector.getItems().isEmpty()) {
                     deviceSelector.getSelectionModel().selectFirst();
                 }
+                deviceSelector.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+                    if (newVal != null) refreshTables();
+                });
             });
         }).start();
 
@@ -149,6 +152,11 @@ public class MainController {
         testAlarmBtn.getStyleClass().add("btn-warning");
         testAlarmBtn.setMaxWidth(Double.MAX_VALUE);
         testAlarmBtn.setOnAction(e -> triggerTestAlarm());
+
+        Button alarmHistoryBtn = new Button("🔔  Alarm Geçmişi");
+        alarmHistoryBtn.getStyleClass().add("btn-secondary");
+        alarmHistoryBtn.setMaxWidth(Double.MAX_VALUE);
+        alarmHistoryBtn.setOnAction(e -> showAlarmHistory());
 
         Label statsLabel = new Label("DURUM");
         statsLabel.getStyleClass().add("section-label");
@@ -226,7 +234,7 @@ public class MainController {
         VBox panel = new VBox(10,
                 connLabel,
                 deviceSelector,
-                unlockBtn, handshakeBtn,
+                unlockBtn, handshakeBtn, alarmHistoryBtn,
                 new Separator(),
                 refreshBtn, testAlarmBtn,
                 new Separator(),
@@ -249,7 +257,6 @@ public class MainController {
     private ScrollPane buildCenterPanel() {
         // ── Üst satır: Kapı Logları | Aktif Alarmlar | Video ──
         VBox logsBox = buildTableBox("📋  Kapı Giriş Kayıtları", buildGateLogTable());
-        VBox alarmsBox = buildTableBox("🚨  Aktif Alarmlar", buildAlarmTable());
 
         // Video panel
         videoView = new javafx.scene.image.ImageView();
@@ -266,9 +273,8 @@ public class MainController {
         VBox videoBox = buildTableBox("📹  Canlı Görüntü", videoPane);
         videoBox.setPrefWidth(340);
 
-        HBox topRow = new HBox(12, logsBox, alarmsBox, videoBox);
+        HBox topRow = new HBox(12, logsBox, videoBox);
         HBox.setHgrow(logsBox, Priority.ALWAYS);
-        HBox.setHgrow(alarmsBox, Priority.ALWAYS);
 
         // ── Alt satır: Ziyaretçi Yönetimi ──
         VBox visitorsBox = buildTableBox("👥  Ziyaretçi Kayıtları", buildVisitorSection());
@@ -308,92 +314,14 @@ public class MainController {
                 d.getValue().getUnlockMethod()
         ));
 
-        gateLogTable.getColumns().addAll(timeCol, methodCol);
+        TableColumn<GateLog, String> deviceCol = new TableColumn<>("Cihaz");
+        deviceCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                d.getValue().getNote() != null ? d.getValue().getNote() : "-"
+        ));
+        gateLogTable.getColumns().addAll(timeCol, methodCol, deviceCol);
         gateLogTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         gateLogTable.setPrefHeight(220);
         return gateLogTable;
-    }
-
-    private TableView<Alarm> buildAlarmTable() {
-        alarmTable = new TableView<>();
-        alarmTable.setPlaceholder(new Label("Aktif alarm yok ✓"));
-
-        TableColumn<Alarm, String> timeCol = new TableColumn<>("Zaman");
-        timeCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-                d.getValue().getAlarmTime() != null ?
-                        d.getValue().getAlarmTime().toString().substring(0, 16).replace('T', ' ') : ""
-        ));
-
-        TableColumn<Alarm, String> typeCol = new TableColumn<>("Tip");
-        typeCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-                d.getValue().getAlarmType()
-        ));
-
-        TableColumn<Alarm, String> severityCol = new TableColumn<>("Öncelik");
-        severityCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-                d.getValue().getSeverity()
-        ));
-
-        TableColumn<Alarm, String> sourceCol = new TableColumn<>("Kaynak");
-        sourceCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-                d.getValue().getSourceLabel()
-        ));
-
-        TableColumn<Alarm, Void> resolveCol = new TableColumn<>("");
-        resolveCol.setCellFactory(col -> new TableCell<>() {
-            private final Button btn = new Button("✓ Çözüldü");
-            { btn.getStyleClass().add("btn-success");
-                btn.setOnAction(e -> {
-                    Alarm a = getTableView().getItems().get(getIndex());
-                    new Thread(() -> { alarmDAO.markResolved(a.getId()); Platform.runLater(() -> refreshTables()); }).start();
-                });
-            }
-            @Override protected void updateItem(Void v, boolean empty) {
-                super.updateItem(v, empty);
-                setGraphic(empty ? null : btn);
-            }
-        });
-        resolveCol.setPrefWidth(90);
-        TableColumn<Alarm, String> warningCol = new TableColumn<>("");
-        warningCol.setCellFactory(col -> new TableCell<>() {
-            private final Label warningLabel = new Label("⚠");
-            private Timeline blink;
-
-            {
-                warningLabel.setStyle("-fx-text-fill: #f85149; -fx-font-size: 16px;");
-                blink = new Timeline(
-                        new KeyFrame(Duration.millis(500), e -> warningLabel.setVisible(true)),
-                        new KeyFrame(Duration.millis(1000), e -> warningLabel.setVisible(false))
-                );
-                blink.setCycleCount(Animation.INDEFINITE);
-            }
-
-            @Override
-            protected void updateItem(String item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || getIndex() >= getTableView().getItems().size()) {
-                    setGraphic(null);
-                    blink.stop();
-                    return;
-                }
-                Alarm alarm = getTableView().getItems().get(getIndex());
-                if ("CRITICAL".equals(alarm.getSeverity())) {
-                    warningLabel.setVisible(true);
-                    blink.play();
-                    setGraphic(warningLabel);
-                } else {
-                    blink.stop();
-                    setGraphic(null);
-                }
-            }
-        });
-        warningCol.setPrefWidth(35);
-        warningCol.setMaxWidth(35);
-        warningCol.setMinWidth(35);
-        alarmTable.getColumns().addAll(warningCol, timeCol, typeCol, severityCol, sourceCol, resolveCol);
-        alarmTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
-        alarmTable.setPrefHeight(220);
-        return alarmTable;
     }
 
     private VBox buildVisitorSection() {
@@ -615,7 +543,20 @@ public class MainController {
 
     private void refreshTables() {
         new Thread(() -> {
-            List<GateLog> logs = gateLogDAO.getAll();
+            String selected = deviceSelector != null ? deviceSelector.getValue() : null;
+            final List<GateLog> logs;
+            if (selected != null && selected.contains("|")) {
+                List<GateLog> temp;
+                try {
+                    final Long deviceId = Long.parseLong(selected.split("\\|")[0].trim());
+                    temp = gateLogDAO.getByDeviceId(deviceId);
+                } catch (Exception e) {
+                    temp = gateLogDAO.getAll();
+                }
+                logs = temp;
+            } else {
+                logs = gateLogDAO.getAll();
+            }
             List<Alarm> alarms = alarmDAO.getUnresolved();
             List<Visitor> visitors = backendApiClient.getVisitors();
             List<Device> devices = backendApiClient.getDevices();
@@ -784,5 +725,83 @@ public class MainController {
     }
     public VideoStreamReceiver getVideoStreamReceiver() {
         return videoStreamReceiver;
+    }
+
+    private void showAlarmHistory() {
+        javafx.stage.Stage historyStage = new javafx.stage.Stage();
+        historyStage.setTitle("Alarm Geçmişi");
+
+        TableView<Alarm> historyTable = new TableView<>();
+        historyTable.setPlaceholder(new Label("Alarm kaydı yok"));
+
+        TableColumn<Alarm, String> timeCol = new TableColumn<>("Zaman");
+        timeCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                d.getValue().getAlarmTime() != null ?
+                        d.getValue().getAlarmTime().toString().substring(0, 16).replace('T', ' ') : ""
+        ));
+
+        TableColumn<Alarm, String> typeCol = new TableColumn<>("Tip");
+        typeCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                d.getValue().getAlarmType()
+        ));
+
+        TableColumn<Alarm, String> severityCol = new TableColumn<>("Öncelik");
+        severityCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                d.getValue().getSeverity()
+        ));
+
+        TableColumn<Alarm, String> sourceCol = new TableColumn<>("Kaynak");
+        sourceCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                d.getValue().getSourceLabel()
+        ));
+
+        TableColumn<Alarm, String> statusCol = new TableColumn<>("Durum");
+        statusCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                d.getValue().isResolved() ? "✓ Çözüldü" : "⚠ Aktif"
+        ));
+
+        TableColumn<Alarm, Void> resolveCol = new TableColumn<>("");
+        resolveCol.setCellFactory(col -> new TableCell<>() {
+            private final Button btn = new Button("✓ Çözüldü");
+            {
+                btn.getStyleClass().add("btn-success");
+                btn.setOnAction(e -> {
+                    Alarm a = getTableView().getItems().get(getIndex());
+                    new Thread(() -> {
+                        alarmDAO.markResolved(a.getId());
+                        Platform.runLater(() -> {
+                            refreshTables();
+                            a.setResolved(true);
+                            historyTable.refresh();
+                        });
+                    }).start();
+                });
+            }
+            @Override protected void updateItem(Void v, boolean empty) {
+                super.updateItem(v, empty);
+                if (empty) { setGraphic(null); return; }
+                Alarm a = getTableView().getItems().get(getIndex());
+                btn.setDisable(a.isResolved());
+                setGraphic(btn);
+            }
+        });
+        resolveCol.setPrefWidth(100);
+
+        historyTable.getColumns().addAll(timeCol, typeCol, severityCol, sourceCol, statusCol, resolveCol);
+        historyTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+
+        new Thread(() -> {
+            List<Alarm> allAlarms = alarmDAO.getAll();
+            Platform.runLater(() -> historyTable.setItems(FXCollections.observableArrayList(allAlarms)));
+        }).start();
+
+        BorderPane layout = new BorderPane(historyTable);
+        layout.setStyle("-fx-background-color: #0d1117;");
+        layout.setPadding(new Insets(16));
+
+        javafx.scene.Scene scene = new javafx.scene.Scene(layout, 850, 450);
+        scene.getStylesheets().add(getClass().getResource("/styles/app.css").toExternalForm());
+        historyStage.setScene(scene);
+        historyStage.show();
     }
 }
