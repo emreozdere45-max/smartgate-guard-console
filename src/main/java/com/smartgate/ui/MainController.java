@@ -168,43 +168,21 @@ public class MainController {
             testPacket.setDataString("Daire 12A");
             showIncomingCallPopup(testPacket);
         });
+
+        Label elevatorLabel = new Label("ASANSÖR");
+        elevatorLabel.getStyleClass().add("section-label");
+
+        Button elevatorBtn = new Button("🛗  Asansör Çağır");
+        elevatorBtn.getStyleClass().add("btn-secondary");
+        elevatorBtn.setMaxWidth(Double.MAX_VALUE);
+        elevatorBtn.setOnAction(e -> callElevator());
+
         Button alarmHistoryBtn = new Button("🔔  Alarm Geçmişi");
         alarmHistoryBtn.getStyleClass().add("btn-secondary");
         alarmHistoryBtn.setMaxWidth(Double.MAX_VALUE);
         alarmHistoryBtn.setOnAction(e -> showAlarmHistory());
 
-        Label statsLabel = new Label("DURUM");
-        statsLabel.getStyleClass().add("section-label");
-
-        Label dbStatus = new Label("● PostgreSQL");
-        dbStatus.setStyle("-fx-text-fill: #3fb950; -fx-font-size: 12px;");
-
-        Label intercomStatus = new Label("● İnterkom Dinleniyor");
-        intercomStatus.setStyle("-fx-text-fill: #3fb950; -fx-font-size: 12px;");
-
         // AI bölümü
-        aiInput = new TextField();
-        aiInput.setPromptText("Soru sor...");
-        aiInput.getStyleClass().add("llm-input");
-        aiInput.setVisible(false);
-        aiInput.setManaged(false);
-
-        aiOutput = new TextArea();
-        aiOutput.setEditable(false);
-        aiOutput.setPrefHeight(120);
-        aiOutput.setWrapText(true);
-        aiOutput.getStyleClass().add("llm-output");
-        aiOutput.setVisible(false);
-        aiOutput.setManaged(false);
-
-        Button sendBtn = new Button("🤖 Sor");
-        sendBtn.getStyleClass().add("btn-primary");
-        sendBtn.setMaxWidth(Double.MAX_VALUE);
-        sendBtn.setVisible(false);
-        sendBtn.setManaged(false);
-        sendBtn.setOnAction(e -> handleAiQuery());
-        aiInput.setOnAction(e -> handleAiQuery());
-
         // N butonu
         Circle circle = new Circle(24);
         circle.setFill(Color.web("#1f6feb"));
@@ -229,16 +207,7 @@ public class MainController {
         StackPane aiBtn = new StackPane(ring, circle, nText);
         aiBtn.setCursor(javafx.scene.Cursor.HAND);
         aiBtn.setMaxWidth(Double.MAX_VALUE);
-        aiBtn.setOnMouseClicked(e -> {
-            aiOpen = !aiOpen;
-            aiInput.setVisible(aiOpen);
-            aiInput.setManaged(aiOpen);
-            sendBtn.setVisible(aiOpen);
-            sendBtn.setManaged(aiOpen);
-            aiOutput.setVisible(aiOpen);
-            aiOutput.setManaged(aiOpen);
-            if (aiOpen) aiInput.requestFocus();
-        });
+        aiBtn.setOnMouseClicked(e -> showAiWindow());
 
         Label aiLabel = new Label("YAPAY ZEKA");
         aiLabel.getStyleClass().add("section-label");
@@ -253,15 +222,11 @@ public class MainController {
                 new Separator(),
                 refreshBtn, testAlarmBtn,
                 new Separator(),
-                statsLabel,
-                dbStatus, intercomStatus,
+                elevatorLabel, elevatorBtn,
                 spacer,
                 new Separator(),
                 aiLabel,
-                aiBtn,
-                aiInput,
-                sendBtn,
-                aiOutput
+                aiBtn
         );
         panel.setPadding(new Insets(16));
         panel.setPrefWidth(220);
@@ -885,5 +850,105 @@ public class MainController {
                     callStage.close();
                 })
         ).play();
+
     }
+    private void callElevator() {
+        new Thread(() -> {
+            com.smartgate.network.ComPackageModel packet = new com.smartgate.network.ComPackageModel();
+            packet.setOpe_type(20);
+            packet.setNeedResponse(false);
+            packet.setDataInt(1);
+            intercomClient.sendCommand(packet);
+            Platform.runLater(() -> {
+                javafx.stage.Stage stage = new javafx.stage.Stage();
+                stage.setTitle("Asansör");
+                stage.initStyle(javafx.stage.StageStyle.UNDECORATED);
+
+                Label icon = new Label("🛗");
+                icon.setStyle("-fx-font-size: 48px;");
+
+                Label msg = new Label("Asansör Çağrıldı!");
+                msg.setStyle("-fx-text-fill: #ffffff; -fx-font-size: 18px; -fx-font-weight: bold;");
+
+                Label sub = new Label("Komut gönderildi...");
+                sub.setStyle("-fx-text-fill: #8b949e; -fx-font-size: 13px;");
+
+                // Geri sayım
+                Label countdown = new Label("3");
+                countdown.setStyle("-fx-text-fill: #1f6feb; -fx-font-size: 32px; -fx-font-weight: bold;");
+
+                javafx.animation.Timeline timer = new javafx.animation.Timeline(
+                        new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), ev -> countdown.setText("2")),
+                        new javafx.animation.KeyFrame(javafx.util.Duration.seconds(2), ev -> countdown.setText("1")),
+                        new javafx.animation.KeyFrame(javafx.util.Duration.seconds(3), ev -> stage.close())
+                );
+                timer.play();
+
+                VBox layout = new VBox(12, icon, msg, sub, countdown);
+                layout.setAlignment(Pos.CENTER);
+                layout.setPadding(new Insets(32));
+                layout.setStyle("-fx-background-color: #161b22; -fx-border-color: #1f6feb; -fx-border-width: 2; -fx-border-radius: 12; -fx-background-radius: 12;");
+
+                javafx.scene.Scene scene = new javafx.scene.Scene(layout, 280, 220);
+                scene.getStylesheets().add(getClass().getResource("/styles/app.css").toExternalForm());
+                stage.setScene(scene);
+                stage.show();
+            });
+        }).start();
+    }
+    private void showAiWindow() {
+        javafx.stage.Stage aiStage = new javafx.stage.Stage();
+        aiStage.setTitle("🧠 N AI");
+
+        TextField questionInput = new TextField();
+        questionInput.setPromptText("Soru sor... (örn: bugün kaç kişi geldi?)");
+        questionInput.getStyleClass().add("llm-input");
+        questionInput.setPrefHeight(40);
+
+        Button askBtn = new Button("🤖  Sor");
+        askBtn.getStyleClass().add("btn-primary");
+        askBtn.setPrefHeight(40);
+
+        HBox inputRow = new HBox(8, questionInput, askBtn);
+        HBox.setHgrow(questionInput, Priority.ALWAYS);
+        inputRow.setAlignment(Pos.CENTER);
+
+        TextArea outputArea = new TextArea();
+        outputArea.setEditable(false);
+        outputArea.setWrapText(true);
+        outputArea.setPrefHeight(400);
+        outputArea.getStyleClass().add("llm-output");
+        outputArea.setPromptText("Cevap burada görünecek...");
+
+        Label titleLabel = new Label("🧠  Yapay Zeka Asistan");
+        titleLabel.setStyle("-fx-text-fill: #e6edf3; -fx-font-size: 16px; -fx-font-weight: bold;");
+
+        Label hintLabel = new Label("Türkçe soru sorabilirsiniz. Örn: 'Bugün kaç ziyaretçi geldi?', 'Son alarmları göster'");
+        hintLabel.setStyle("-fx-text-fill: #8b949e; -fx-font-size: 12px;");
+
+        javafx.event.EventHandler<javafx.event.ActionEvent> queryHandler = e -> {
+            String question = questionInput.getText().trim();
+            if (question.isEmpty()) return;
+            outputArea.setText("Düşünüyor...");
+            new Thread(() -> {
+                String result = textToSqlService.generateAndExecute(question);
+                Platform.runLater(() -> outputArea.setText(result));
+            }).start();
+        };
+
+        askBtn.setOnAction(queryHandler);
+        questionInput.setOnAction(queryHandler);
+
+        VBox layout = new VBox(12, titleLabel, hintLabel, inputRow, outputArea);
+        layout.setPadding(new Insets(24));
+        layout.setStyle("-fx-background-color: #0d1117;");
+
+        javafx.scene.Scene scene = new javafx.scene.Scene(layout, 700, 550);
+        scene.getStylesheets().add(getClass().getResource("/styles/app.css").toExternalForm());
+        aiStage.setScene(scene);
+        aiStage.show();
+
+        questionInput.requestFocus();
+    }
+
 }
