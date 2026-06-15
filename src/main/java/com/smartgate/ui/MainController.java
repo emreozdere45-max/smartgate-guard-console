@@ -26,6 +26,10 @@ import java.time.ZonedDateTime;
 import java.util.List;
 import com.smartgate.model.Device;
 
+import com.smartgate.database.ChatMessageDAO;
+import com.smartgate.model.ChatMessage;
+import com.smartgate.database.ApartmentDAO;
+
 public class MainController {
     private final BackendApiClient backendApiClient = new BackendApiClient();
     private final IntercomClient intercomClient;
@@ -33,6 +37,8 @@ public class MainController {
     private final AlarmDAO alarmDAO = new AlarmDAO();
     private final TextToSqlService textToSqlService = new TextToSqlService();
 
+    private ComboBox<String> apartmentSelector;
+    private final ApartmentDAO apartmentDAO = new ApartmentDAO();
     private TableView<GateLog> gateLogTable;
     private TableView<Alarm> alarmTable;
     private TableView<Visitor> visitorTable;
@@ -182,6 +188,11 @@ public class MainController {
         alarmHistoryBtn.setMaxWidth(Double.MAX_VALUE);
         alarmHistoryBtn.setOnAction(e -> showAlarmHistory());
 
+        Button chatBtn = new Button("💬  Mesajlaşma");
+        chatBtn.getStyleClass().add("btn-secondary");
+        chatBtn.setMaxWidth(Double.MAX_VALUE);
+        chatBtn.setOnAction(e -> showChatWindow());
+
         // AI bölümü
         // N butonu
         Circle circle = new Circle(24);
@@ -218,7 +229,7 @@ public class MainController {
         VBox panel = new VBox(10,
                 connLabel,
                 deviceSelector,
-                unlockBtn, handshakeBtn, alarmHistoryBtn, testCallBtn,
+                unlockBtn, handshakeBtn, alarmHistoryBtn, chatBtn, testCallBtn,
                 new Separator(),
                 refreshBtn, testAlarmBtn,
                 new Separator(),
@@ -315,17 +326,33 @@ public class MainController {
         visitorTypeInput.setValue("MISAFIR");
         visitorTypeInput.setPrefWidth(140);
 
-        blockInput = new TextField();
-        blockInput.setPromptText("Blok");
-        blockInput.setPrefWidth(70);
+        ComboBox<String> apartmentSelector = new ComboBox<>();
+        apartmentSelector.setPromptText("Blok-Daire seç...");
+        apartmentSelector.setPrefWidth(180);
+        apartmentSelector.setEditable(true);
 
-        apartmentInput = new TextField();
-        apartmentInput.setPromptText("Daire");
-        apartmentInput.setPrefWidth(70);
-        apartmentInput.textProperty().addListener((obs, oldVal, newVal) -> {
-            if (!newVal.matches("\\d*")) {
-                apartmentInput.setText(newVal.replaceAll("[^\\d]", ""));
-            }
+        new Thread(() -> {
+            List<String> apts = apartmentDAO.getAllApartments();
+            Platform.runLater(() -> {
+                apartmentSelector.getItems().addAll(apts);
+            });
+        }).start();
+
+// Arama filtresi
+        apartmentSelector.getEditor().textProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal == null) return;
+            String filter = newVal.toLowerCase();
+            apartmentSelector.getItems().clear();
+            new Thread(() -> {
+                List<String> all = apartmentDAO.getAllApartments();
+                List<String> filtered = all.stream()
+                        .filter(a -> a.toLowerCase().contains(filter))
+                        .toList();
+                Platform.runLater(() -> {
+                    apartmentSelector.getItems().addAll(filtered);
+                    if (!filtered.isEmpty()) apartmentSelector.show();
+                });
+            }).start();
         });
 
         visitReasonInput = new TextField();
@@ -337,7 +364,7 @@ public class MainController {
 
         HBox form = new HBox(8,
                 visitorNameInput, visitorTypeInput,
-                blockInput, apartmentInput,
+                apartmentSelector,
                 visitReasonInput, saveBtn
         );
         HBox.setHgrow(visitorNameInput, Priority.ALWAYS);
@@ -494,17 +521,30 @@ public class MainController {
     private void saveVisitor() {
         String name = visitorNameInput.getText().trim();
         if (name.isEmpty()) return;
+
+        String aptSelected = apartmentSelector.getValue();
+        String blockName = "";
+        String aptNo = "";
+        if (aptSelected != null && aptSelected.contains("-")) {
+            String[] parts = aptSelected.split("-", 2);
+            blockName = parts[0].trim();
+            aptNo = parts[1].trim();
+        }
+
+        final String finalBlock = blockName;
+        final String finalApt = aptNo;
+
         new Thread(() -> {
             Visitor v = backendApiClient.createVisitor(
                     name, visitorTypeInput.getValue(),
-                    blockInput.getText().trim(),
-                    apartmentInput.getText().trim(),
+                    finalBlock, finalApt,
                     visitReasonInput.getText().trim()
             );
             Platform.runLater(() -> {
                 if (v != null) {
-                    visitorNameInput.clear(); blockInput.clear();
-                    apartmentInput.clear(); visitReasonInput.clear();
+                    visitorNameInput.clear();
+                    apartmentSelector.setValue(null);
+                    visitReasonInput.clear();
                     refreshTables();
                 }
             });
@@ -950,5 +990,117 @@ public class MainController {
 
         questionInput.requestFocus();
     }
+    private void showChatWindow() {
+        javafx.stage.Stage chatStage = new javafx.stage.Stage();
+        chatStage.setTitle("💬 Mesajlaşma");
 
+        // Sol: Daire listesi
+        ListView<String> apartmentList = new ListView<>();
+        apartmentList.setPrefWidth(200);
+        apartmentList.setStyle("-fx-background-color: #161b22; -fx-border-color: #30363d;");
+
+        // Daireleri yükle
+        new Thread(() -> {
+            List<String> apts = apartmentDAO.getAllApartments();
+            Platform.runLater(() -> {
+                apartmentList.getItems().add("📢 Tüm Daireler");
+                apartmentList.getItems().addAll(apts);
+            });
+        }).start();
+
+        // Sağ: Mesaj alanı
+        ListView<String> messageList = new ListView<>();
+        messageList.setStyle("-fx-background-color: #0d1117; -fx-border-color: #30363d;");
+
+        TextField messageInput = new TextField();
+        messageInput.setPromptText("Mesaj yaz...");
+        messageInput.getStyleClass().add("llm-input");
+
+        Button sendMsgBtn = new Button("Gönder ➤");
+        sendMsgBtn.getStyleClass().add("btn-primary");
+
+        ChatMessageDAO chatDAO = new ChatMessageDAO();
+
+        // Mesaj gönder
+        javafx.event.EventHandler<javafx.event.ActionEvent> sendHandler = e -> {
+            String text = messageInput.getText().trim();
+            String selected = apartmentList.getSelectionModel().getSelectedItem();
+            if (text.isEmpty() || selected == null) return;
+
+            ChatMessage msg = new ChatMessage();
+            msg.setSenderType("SECURITY");
+            msg.setMessageText(text);
+            msg.setSentAt(java.time.ZonedDateTime.now(java.time.ZoneId.of("Europe/Istanbul")).toLocalDateTime());
+
+// Seçili daireye göre apartment_id set et
+            if (selected != null && !selected.equals("📢 Tüm Daireler") && selected.contains("-")) {
+                String[] parts = selected.split("-", 2);
+                Long aptId = apartmentDAO.getApartmentId(parts[0].trim(), parts[1].trim());
+                msg.setApartmentId(aptId);
+            }
+
+            new Thread(() -> {
+                chatDAO.insert(msg);
+                Platform.runLater(() -> {
+                    messageList.getItems().add(0, "🛡 Güvenlik: " + text);
+                    messageInput.clear();
+                });
+            }).start();
+        };
+
+        sendMsgBtn.setOnAction(sendHandler);
+        messageInput.setOnAction(sendHandler);
+
+        // Daire seçince mesajları yükle
+        apartmentList.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal == null) return;
+            messageList.getItems().clear();
+            new Thread(() -> {
+                List<ChatMessage> msgs;
+                if (newVal.equals("📢 Tüm Daireler")) {
+                    msgs = chatDAO.getAll();
+                } else if (newVal.contains("-")) {
+                    String[] parts = newVal.split("-", 2);
+                    Long aptId = apartmentDAO.getApartmentId(parts[0].trim(), parts[1].trim());
+                    msgs = aptId != null ? chatDAO.getByApartmentId(aptId) : chatDAO.getAll();
+                } else {
+                    msgs = chatDAO.getAll();
+                }
+                Platform.runLater(() -> {
+                    for (ChatMessage m : msgs) {
+                        String prefix = "SECURITY".equals(m.getSenderType()) ? "🛡 Güvenlik: " : "🏠 Daire: ";
+                        messageList.getItems().add(prefix + m.getMessageText() +
+                                " (" + m.getSentAt().toString().substring(11, 16) + ")");
+                    }
+                });
+            }).start();
+        });
+
+        HBox inputRow = new HBox(8, messageInput, sendMsgBtn);
+        HBox.setHgrow(messageInput, Priority.ALWAYS);
+
+        Label msgLabel = new Label("Mesajlar");
+        msgLabel.setStyle("-fx-text-fill: #8b949e; -fx-font-size: 11px; -fx-font-weight: bold;");
+
+        VBox rightPanel = new VBox(8, msgLabel, messageList, inputRow);
+        VBox.setVgrow(messageList, Priority.ALWAYS);
+        rightPanel.setPadding(new Insets(8));
+        rightPanel.setStyle("-fx-background-color: #0d1117;");
+
+        Label aptLabel = new Label("Daireler");
+        aptLabel.setStyle("-fx-text-fill: #8b949e; -fx-font-size: 11px; -fx-font-weight: bold;");
+
+        VBox leftPanel = new VBox(8, aptLabel, apartmentList);
+        VBox.setVgrow(apartmentList, Priority.ALWAYS);
+        leftPanel.setPadding(new Insets(8));
+        leftPanel.setStyle("-fx-background-color: #161b22; -fx-border-color: #30363d; -fx-border-width: 0 1 0 0;");
+
+        SplitPane splitPane = new SplitPane(leftPanel, rightPanel);
+        splitPane.setDividerPositions(0.25);
+
+        javafx.scene.Scene scene = new javafx.scene.Scene(splitPane, 750, 500);
+        scene.getStylesheets().add(getClass().getResource("/styles/app.css").toExternalForm());
+        chatStage.setScene(scene);
+        chatStage.show();
+    }
 }
