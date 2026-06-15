@@ -58,4 +58,26 @@ public class AlarmDAO {
             System.err.println("Alarm markResolved hatası: " + e.getMessage());
         }
     }
+    public List<Alarm> getAll() {
+        List<Alarm> alarms = new ArrayList<>();
+        String sql = "SELECT * FROM alarms ORDER BY alarm_time DESC";
+        try (Connection conn = DatabaseManager.getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                Alarm a = new Alarm();
+                a.setId(rs.getInt("id"));
+                a.setAlarmTime(rs.getTimestamp("alarm_time").toLocalDateTime());
+                a.setAlarmType(rs.getString("alarm_type"));
+                a.setApartmentNo(rs.getString("source_label"));
+                a.setSourceLabel(rs.getString("source_label"));
+                a.setSeverity(rs.getString("severity"));
+                a.setResolved(rs.getBoolean("is_resolved"));
+                alarms.add(a);
+            }
+        } catch (SQLException e) {
+            System.err.println("Alarm getAll hatası: " + e.getMessage());
+        }
+        return alarms;
+    }
 }

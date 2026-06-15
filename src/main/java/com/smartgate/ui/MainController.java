@@ -46,7 +46,7 @@ public class MainController {
     private TextField deviceIpInput;
     private TextField devicePortInput;
     private TextField deviceLocationInput;
-
+    private ComboBox<String> deviceSelector;
     private javafx.scene.image.ImageView videoView;
     private VideoStreamReceiver videoStreamReceiver;
     // AI popup
@@ -100,7 +100,7 @@ public class MainController {
     private VBox buildLeftPanelWithAi() {
         Label connLabel = new Label("KONTROL");
         connLabel.getStyleClass().add("section-label");
-        ComboBox<String> deviceSelector = new ComboBox<>();
+        deviceSelector = new ComboBox<>();
         deviceSelector.setPromptText("Cihaz seç...");
         deviceSelector.setMaxWidth(Double.MAX_VALUE);
         deviceSelector.getStyleClass().add("combo-box");
@@ -115,25 +115,34 @@ public class MainController {
                 if (!deviceSelector.getItems().isEmpty()) {
                     deviceSelector.getSelectionModel().selectFirst();
                 }
+                deviceSelector.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+                    if (newVal != null) refreshTables();
+                });
             });
         }).start();
 
         Button unlockBtn = new Button("🔓  Kapıyı Aç");
         unlockBtn.getStyleClass().add("btn-primary");
         unlockBtn.setMaxWidth(Double.MAX_VALUE);
-        unlockBtn.setOnAction(e -> new Thread(() -> {
-            String selected = deviceSelector.getValue();
-            Long deviceId = 1L;
-            if (selected != null && selected.contains("|")) {
-                try {
-                    deviceId = Long.parseLong(selected.split("\\|")[0].trim());
-                } catch (Exception ex) { deviceId = 1L; }
-            }
-            final Long finalDeviceId = deviceId;
-            boolean success = backendApiClient.unlockDeviceDoor(finalDeviceId);
-            if (!success) intercomClient.unlockDoor();
-            Platform.runLater(this::refreshTables);
-        }).start());
+        unlockBtn.setOnAction(e -> {
+            Platform.runLater(() -> unlockBtn.setDisable(true));
+            new Thread(() -> {
+                String selected = deviceSelector.getValue();
+                Long deviceId = 1L;
+                if (selected != null && selected.contains("|")) {
+                    try {
+                        deviceId = Long.parseLong(selected.split("\\|")[0].trim());
+                    } catch (Exception ex) { deviceId = 1L; }
+                }
+                final Long finalDeviceId = deviceId;
+                boolean success = backendApiClient.unlockDeviceDoor(finalDeviceId);
+                if (!success) intercomClient.unlockDoor();
+                Platform.runLater(() -> {
+                    unlockBtn.setDisable(false);
+                    refreshTables();
+                });
+            }).start();
+        });
 
         Button handshakeBtn = new Button("🤝  Handshake");
         handshakeBtn.getStyleClass().add("btn-secondary");
@@ -150,38 +159,30 @@ public class MainController {
         testAlarmBtn.setMaxWidth(Double.MAX_VALUE);
         testAlarmBtn.setOnAction(e -> triggerTestAlarm());
 
-        Label statsLabel = new Label("DURUM");
-        statsLabel.getStyleClass().add("section-label");
+        Button testCallBtn = new Button("📞  Test Zil");
+        testCallBtn.getStyleClass().add("btn-secondary");
+        testCallBtn.setMaxWidth(Double.MAX_VALUE);
+        testCallBtn.setOnAction(e -> {
+            com.smartgate.network.ComPackageModel testPacket = new com.smartgate.network.ComPackageModel();
+            testPacket.setOpe_type(43);
+            testPacket.setDataString("Daire 12A");
+            showIncomingCallPopup(testPacket);
+        });
 
-        Label dbStatus = new Label("● PostgreSQL");
-        dbStatus.setStyle("-fx-text-fill: #3fb950; -fx-font-size: 12px;");
+        Label elevatorLabel = new Label("ASANSÖR");
+        elevatorLabel.getStyleClass().add("section-label");
 
-        Label intercomStatus = new Label("● İnterkom Dinleniyor");
-        intercomStatus.setStyle("-fx-text-fill: #3fb950; -fx-font-size: 12px;");
+        Button elevatorBtn = new Button("🛗  Asansör Çağır");
+        elevatorBtn.getStyleClass().add("btn-secondary");
+        elevatorBtn.setMaxWidth(Double.MAX_VALUE);
+        elevatorBtn.setOnAction(e -> callElevator());
+
+        Button alarmHistoryBtn = new Button("🔔  Alarm Geçmişi");
+        alarmHistoryBtn.getStyleClass().add("btn-secondary");
+        alarmHistoryBtn.setMaxWidth(Double.MAX_VALUE);
+        alarmHistoryBtn.setOnAction(e -> showAlarmHistory());
 
         // AI bölümü
-        aiInput = new TextField();
-        aiInput.setPromptText("Soru sor...");
-        aiInput.getStyleClass().add("llm-input");
-        aiInput.setVisible(false);
-        aiInput.setManaged(false);
-
-        aiOutput = new TextArea();
-        aiOutput.setEditable(false);
-        aiOutput.setPrefHeight(120);
-        aiOutput.setWrapText(true);
-        aiOutput.getStyleClass().add("llm-output");
-        aiOutput.setVisible(false);
-        aiOutput.setManaged(false);
-
-        Button sendBtn = new Button("🤖 Sor");
-        sendBtn.getStyleClass().add("btn-primary");
-        sendBtn.setMaxWidth(Double.MAX_VALUE);
-        sendBtn.setVisible(false);
-        sendBtn.setManaged(false);
-        sendBtn.setOnAction(e -> handleAiQuery());
-        aiInput.setOnAction(e -> handleAiQuery());
-
         // N butonu
         Circle circle = new Circle(24);
         circle.setFill(Color.web("#1f6feb"));
@@ -206,16 +207,7 @@ public class MainController {
         StackPane aiBtn = new StackPane(ring, circle, nText);
         aiBtn.setCursor(javafx.scene.Cursor.HAND);
         aiBtn.setMaxWidth(Double.MAX_VALUE);
-        aiBtn.setOnMouseClicked(e -> {
-            aiOpen = !aiOpen;
-            aiInput.setVisible(aiOpen);
-            aiInput.setManaged(aiOpen);
-            sendBtn.setVisible(aiOpen);
-            sendBtn.setManaged(aiOpen);
-            aiOutput.setVisible(aiOpen);
-            aiOutput.setManaged(aiOpen);
-            if (aiOpen) aiInput.requestFocus();
-        });
+        aiBtn.setOnMouseClicked(e -> showAiWindow());
 
         Label aiLabel = new Label("YAPAY ZEKA");
         aiLabel.getStyleClass().add("section-label");
@@ -226,19 +218,15 @@ public class MainController {
         VBox panel = new VBox(10,
                 connLabel,
                 deviceSelector,
-                unlockBtn, handshakeBtn,
+                unlockBtn, handshakeBtn, alarmHistoryBtn, testCallBtn,
                 new Separator(),
                 refreshBtn, testAlarmBtn,
                 new Separator(),
-                statsLabel,
-                dbStatus, intercomStatus,
+                elevatorLabel, elevatorBtn,
                 spacer,
                 new Separator(),
                 aiLabel,
-                aiBtn,
-                aiInput,
-                sendBtn,
-                aiOutput
+                aiBtn
         );
         panel.setPadding(new Insets(16));
         panel.setPrefWidth(220);
@@ -249,7 +237,6 @@ public class MainController {
     private ScrollPane buildCenterPanel() {
         // ── Üst satır: Kapı Logları | Aktif Alarmlar | Video ──
         VBox logsBox = buildTableBox("📋  Kapı Giriş Kayıtları", buildGateLogTable());
-        VBox alarmsBox = buildTableBox("🚨  Aktif Alarmlar", buildAlarmTable());
 
         // Video panel
         videoView = new javafx.scene.image.ImageView();
@@ -266,9 +253,8 @@ public class MainController {
         VBox videoBox = buildTableBox("📹  Canlı Görüntü", videoPane);
         videoBox.setPrefWidth(340);
 
-        HBox topRow = new HBox(12, logsBox, alarmsBox, videoBox);
+        HBox topRow = new HBox(12, logsBox, videoBox);
         HBox.setHgrow(logsBox, Priority.ALWAYS);
-        HBox.setHgrow(alarmsBox, Priority.ALWAYS);
 
         // ── Alt satır: Ziyaretçi Yönetimi ──
         VBox visitorsBox = buildTableBox("👥  Ziyaretçi Kayıtları", buildVisitorSection());
@@ -308,92 +294,14 @@ public class MainController {
                 d.getValue().getUnlockMethod()
         ));
 
-        gateLogTable.getColumns().addAll(timeCol, methodCol);
+        TableColumn<GateLog, String> deviceCol = new TableColumn<>("Cihaz");
+        deviceCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                d.getValue().getNote() != null ? d.getValue().getNote() : "-"
+        ));
+        gateLogTable.getColumns().addAll(timeCol, methodCol, deviceCol);
         gateLogTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         gateLogTable.setPrefHeight(220);
         return gateLogTable;
-    }
-
-    private TableView<Alarm> buildAlarmTable() {
-        alarmTable = new TableView<>();
-        alarmTable.setPlaceholder(new Label("Aktif alarm yok ✓"));
-
-        TableColumn<Alarm, String> timeCol = new TableColumn<>("Zaman");
-        timeCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-                d.getValue().getAlarmTime() != null ?
-                        d.getValue().getAlarmTime().toString().substring(0, 16).replace('T', ' ') : ""
-        ));
-
-        TableColumn<Alarm, String> typeCol = new TableColumn<>("Tip");
-        typeCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-                d.getValue().getAlarmType()
-        ));
-
-        TableColumn<Alarm, String> severityCol = new TableColumn<>("Öncelik");
-        severityCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-                d.getValue().getSeverity()
-        ));
-
-        TableColumn<Alarm, String> sourceCol = new TableColumn<>("Kaynak");
-        sourceCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-                d.getValue().getSourceLabel()
-        ));
-
-        TableColumn<Alarm, Void> resolveCol = new TableColumn<>("");
-        resolveCol.setCellFactory(col -> new TableCell<>() {
-            private final Button btn = new Button("✓ Çözüldü");
-            { btn.getStyleClass().add("btn-success");
-                btn.setOnAction(e -> {
-                    Alarm a = getTableView().getItems().get(getIndex());
-                    new Thread(() -> { alarmDAO.markResolved(a.getId()); Platform.runLater(() -> refreshTables()); }).start();
-                });
-            }
-            @Override protected void updateItem(Void v, boolean empty) {
-                super.updateItem(v, empty);
-                setGraphic(empty ? null : btn);
-            }
-        });
-        resolveCol.setPrefWidth(90);
-        TableColumn<Alarm, String> warningCol = new TableColumn<>("");
-        warningCol.setCellFactory(col -> new TableCell<>() {
-            private final Label warningLabel = new Label("⚠");
-            private Timeline blink;
-
-            {
-                warningLabel.setStyle("-fx-text-fill: #f85149; -fx-font-size: 16px;");
-                blink = new Timeline(
-                        new KeyFrame(Duration.millis(500), e -> warningLabel.setVisible(true)),
-                        new KeyFrame(Duration.millis(1000), e -> warningLabel.setVisible(false))
-                );
-                blink.setCycleCount(Animation.INDEFINITE);
-            }
-
-            @Override
-            protected void updateItem(String item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || getIndex() >= getTableView().getItems().size()) {
-                    setGraphic(null);
-                    blink.stop();
-                    return;
-                }
-                Alarm alarm = getTableView().getItems().get(getIndex());
-                if ("CRITICAL".equals(alarm.getSeverity())) {
-                    warningLabel.setVisible(true);
-                    blink.play();
-                    setGraphic(warningLabel);
-                } else {
-                    blink.stop();
-                    setGraphic(null);
-                }
-            }
-        });
-        warningCol.setPrefWidth(35);
-        warningCol.setMaxWidth(35);
-        warningCol.setMinWidth(35);
-        alarmTable.getColumns().addAll(warningCol, timeCol, typeCol, severityCol, sourceCol, resolveCol);
-        alarmTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
-        alarmTable.setPrefHeight(220);
-        return alarmTable;
     }
 
     private VBox buildVisitorSection() {
@@ -540,6 +448,9 @@ public class MainController {
                     });
                 }).start();
             }
+            if (packet.getOpe_type() == 43) {
+                Platform.runLater(() -> showIncomingCallPopup(packet));
+            }
         });
     }
 
@@ -615,13 +526,24 @@ public class MainController {
 
     private void refreshTables() {
         new Thread(() -> {
-            List<GateLog> logs = gateLogDAO.getAll();
-            List<Alarm> alarms = alarmDAO.getUnresolved();
+            String selected = deviceSelector != null ? deviceSelector.getValue() : null;
+            final List<GateLog> logs;
+            if (selected != null && selected.contains("|")) {
+                List<GateLog> temp;
+                try {
+                    final Long deviceId = Long.parseLong(selected.split("\\|")[0].trim());
+                    temp = gateLogDAO.getByDeviceId(deviceId);
+                } catch (Exception e) {
+                    temp = gateLogDAO.getAll();
+                }
+                logs = temp;
+            } else {
+                logs = gateLogDAO.getAll();
+            }
             List<Visitor> visitors = backendApiClient.getVisitors();
             List<Device> devices = backendApiClient.getDevices();
             Platform.runLater(() -> {
                 gateLogTable.setItems(FXCollections.observableArrayList(logs));
-                alarmTable.setItems(FXCollections.observableArrayList(alarms));
                 visitorTable.setItems(FXCollections.observableArrayList(visitors));
                 deviceTable.setItems(FXCollections.observableArrayList(devices));
             });
@@ -785,4 +707,248 @@ public class MainController {
     public VideoStreamReceiver getVideoStreamReceiver() {
         return videoStreamReceiver;
     }
+
+    private void showAlarmHistory() {
+        javafx.stage.Stage historyStage = new javafx.stage.Stage();
+        historyStage.setTitle("Alarm Geçmişi");
+
+        TableView<Alarm> historyTable = new TableView<>();
+        historyTable.setPlaceholder(new Label("Alarm kaydı yok"));
+
+        TableColumn<Alarm, String> timeCol = new TableColumn<>("Zaman");
+        timeCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                d.getValue().getAlarmTime() != null ?
+                        d.getValue().getAlarmTime().toString().substring(0, 16).replace('T', ' ') : ""
+        ));
+
+        TableColumn<Alarm, String> typeCol = new TableColumn<>("Tip");
+        typeCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                d.getValue().getAlarmType()
+        ));
+
+        TableColumn<Alarm, String> severityCol = new TableColumn<>("Öncelik");
+        severityCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                d.getValue().getSeverity()
+        ));
+
+        TableColumn<Alarm, String> sourceCol = new TableColumn<>("Kaynak");
+        sourceCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                d.getValue().getSourceLabel()
+        ));
+
+        TableColumn<Alarm, String> statusCol = new TableColumn<>("Durum");
+        statusCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                d.getValue().isResolved() ? "✓ Çözüldü" : "⚠ Aktif"
+        ));
+
+        TableColumn<Alarm, Void> resolveCol = new TableColumn<>("");
+        resolveCol.setCellFactory(col -> new TableCell<>() {
+            private final Button btn = new Button("✓ Çözüldü");
+            {
+                btn.getStyleClass().add("btn-success");
+                btn.setOnAction(e -> {
+                    Alarm a = getTableView().getItems().get(getIndex());
+                    new Thread(() -> {
+                        alarmDAO.markResolved(a.getId());
+                        Platform.runLater(() -> {
+                            refreshTables();
+                            a.setResolved(true);
+                            historyTable.refresh();
+                        });
+                    }).start();
+                });
+            }
+            @Override protected void updateItem(Void v, boolean empty) {
+                super.updateItem(v, empty);
+                if (empty) { setGraphic(null); return; }
+                Alarm a = getTableView().getItems().get(getIndex());
+                btn.setDisable(a.isResolved());
+                setGraphic(btn);
+            }
+        });
+        resolveCol.setPrefWidth(100);
+
+        historyTable.getColumns().addAll(timeCol, typeCol, severityCol, sourceCol, statusCol, resolveCol);
+        historyTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+
+        new Thread(() -> {
+            List<Alarm> allAlarms = alarmDAO.getAll();
+            Platform.runLater(() -> historyTable.setItems(FXCollections.observableArrayList(allAlarms)));
+        }).start();
+
+        BorderPane layout = new BorderPane(historyTable);
+        layout.setStyle("-fx-background-color: #0d1117;");
+        layout.setPadding(new Insets(16));
+
+        javafx.scene.Scene scene = new javafx.scene.Scene(layout, 850, 450);
+        scene.getStylesheets().add(getClass().getResource("/styles/app.css").toExternalForm());
+        historyStage.setScene(scene);
+        historyStage.show();
+    }
+    private void showIncomingCallPopup(com.smartgate.network.ComPackageModel packet) {
+        javafx.stage.Stage callStage = new javafx.stage.Stage();
+        callStage.setTitle("📞 Gelen Arama");
+        callStage.initStyle(javafx.stage.StageStyle.UNDECORATED);
+
+        Label callerLabel = new Label("📞 Zil Çalıyor");
+        callerLabel.setStyle("-fx-text-fill: #ffffff; -fx-font-size: 24px; -fx-font-weight: bold;");
+
+        String callerInfo = packet.getDataString() != null ? packet.getDataString() : "Bilinmiyor";
+        Label infoLabel = new Label("Daire: " + callerInfo);
+        infoLabel.setStyle("-fx-text-fill: #8b949e; -fx-font-size: 16px;");
+
+        Button acceptBtn = new Button("✓ Kabul Et & Kapıyı Aç");
+        acceptBtn.setStyle("-fx-background-color: #238636; -fx-text-fill: white; -fx-font-size: 14px; -fx-padding: 12 24 12 24; -fx-background-radius: 8; -fx-cursor: hand;");
+        acceptBtn.setOnAction(e -> {
+            new Thread(() -> {
+                String selected = deviceSelector != null ? deviceSelector.getValue() : null;
+                Long deviceId = 1L;
+                if (selected != null && selected.contains("|")) {
+                    try { deviceId = Long.parseLong(selected.split("\\|")[0].trim()); } catch (Exception ex) {}
+                }
+                backendApiClient.unlockDeviceDoor(deviceId);
+                Platform.runLater(() -> {
+                    callStage.close();
+                    refreshTables();
+                });
+            }).start();
+        });
+
+        Button rejectBtn = new Button("✗ Reddet");
+        rejectBtn.setStyle("-fx-background-color: #da3633; -fx-text-fill: white; -fx-font-size: 14px; -fx-padding: 12 24 12 24; -fx-background-radius: 8; -fx-cursor: hand;");
+        rejectBtn.setOnAction(e -> callStage.close());
+
+        // Yanıp sönen animasyon
+        javafx.animation.Timeline blink = new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(javafx.util.Duration.millis(500),
+                        ev -> callerLabel.setOpacity(1.0)),
+                new javafx.animation.KeyFrame(javafx.util.Duration.millis(1000),
+                        ev -> callerLabel.setOpacity(0.3))
+        );
+        blink.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        blink.play();
+
+        callStage.setOnHidden(e -> blink.stop());
+
+        HBox buttons = new HBox(16, acceptBtn, rejectBtn);
+        buttons.setAlignment(Pos.CENTER);
+
+        VBox layout = new VBox(20, callerLabel, infoLabel, buttons);
+        layout.setAlignment(Pos.CENTER);
+        layout.setPadding(new Insets(40));
+        layout.setStyle("-fx-background-color: #161b22; -fx-border-color: #1f6feb; -fx-border-width: 2; -fx-border-radius: 12; -fx-background-radius: 12;");
+
+        javafx.scene.Scene scene = new javafx.scene.Scene(layout, 400, 250);
+        scene.getStylesheets().add(getClass().getResource("/styles/app.css").toExternalForm());
+        callStage.setScene(scene);
+        callStage.show();
+
+        // 30 saniye sonra otomatik kapat
+        new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(javafx.util.Duration.seconds(30), e -> {
+                    blink.stop();
+                    callStage.close();
+                })
+        ).play();
+
+    }
+    private void callElevator() {
+        new Thread(() -> {
+            com.smartgate.network.ComPackageModel packet = new com.smartgate.network.ComPackageModel();
+            packet.setOpe_type(20);
+            packet.setNeedResponse(false);
+            packet.setDataInt(1);
+            intercomClient.sendCommand(packet);
+            Platform.runLater(() -> {
+                javafx.stage.Stage stage = new javafx.stage.Stage();
+                stage.setTitle("Asansör");
+                stage.initStyle(javafx.stage.StageStyle.UNDECORATED);
+
+                Label icon = new Label("🛗");
+                icon.setStyle("-fx-font-size: 48px;");
+
+                Label msg = new Label("Asansör Çağrıldı!");
+                msg.setStyle("-fx-text-fill: #ffffff; -fx-font-size: 18px; -fx-font-weight: bold;");
+
+                Label sub = new Label("Komut gönderildi...");
+                sub.setStyle("-fx-text-fill: #8b949e; -fx-font-size: 13px;");
+
+                // Geri sayım
+                Label countdown = new Label("3");
+                countdown.setStyle("-fx-text-fill: #1f6feb; -fx-font-size: 32px; -fx-font-weight: bold;");
+
+                javafx.animation.Timeline timer = new javafx.animation.Timeline(
+                        new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), ev -> countdown.setText("2")),
+                        new javafx.animation.KeyFrame(javafx.util.Duration.seconds(2), ev -> countdown.setText("1")),
+                        new javafx.animation.KeyFrame(javafx.util.Duration.seconds(3), ev -> stage.close())
+                );
+                timer.play();
+
+                VBox layout = new VBox(12, icon, msg, sub, countdown);
+                layout.setAlignment(Pos.CENTER);
+                layout.setPadding(new Insets(32));
+                layout.setStyle("-fx-background-color: #161b22; -fx-border-color: #1f6feb; -fx-border-width: 2; -fx-border-radius: 12; -fx-background-radius: 12;");
+
+                javafx.scene.Scene scene = new javafx.scene.Scene(layout, 280, 220);
+                scene.getStylesheets().add(getClass().getResource("/styles/app.css").toExternalForm());
+                stage.setScene(scene);
+                stage.show();
+            });
+        }).start();
+    }
+    private void showAiWindow() {
+        javafx.stage.Stage aiStage = new javafx.stage.Stage();
+        aiStage.setTitle("🧠 N AI");
+
+        TextField questionInput = new TextField();
+        questionInput.setPromptText("Soru sor... (örn: bugün kaç kişi geldi?)");
+        questionInput.getStyleClass().add("llm-input");
+        questionInput.setPrefHeight(40);
+
+        Button askBtn = new Button("🤖  Sor");
+        askBtn.getStyleClass().add("btn-primary");
+        askBtn.setPrefHeight(40);
+
+        HBox inputRow = new HBox(8, questionInput, askBtn);
+        HBox.setHgrow(questionInput, Priority.ALWAYS);
+        inputRow.setAlignment(Pos.CENTER);
+
+        TextArea outputArea = new TextArea();
+        outputArea.setEditable(false);
+        outputArea.setWrapText(true);
+        outputArea.setPrefHeight(400);
+        outputArea.getStyleClass().add("llm-output");
+        outputArea.setPromptText("Cevap burada görünecek...");
+
+        Label titleLabel = new Label("🧠  Yapay Zeka Asistan");
+        titleLabel.setStyle("-fx-text-fill: #e6edf3; -fx-font-size: 16px; -fx-font-weight: bold;");
+
+        Label hintLabel = new Label("Türkçe soru sorabilirsiniz. Örn: 'Bugün kaç ziyaretçi geldi?', 'Son alarmları göster'");
+        hintLabel.setStyle("-fx-text-fill: #8b949e; -fx-font-size: 12px;");
+
+        javafx.event.EventHandler<javafx.event.ActionEvent> queryHandler = e -> {
+            String question = questionInput.getText().trim();
+            if (question.isEmpty()) return;
+            outputArea.setText("Düşünüyor...");
+            new Thread(() -> {
+                String result = textToSqlService.generateAndExecute(question);
+                Platform.runLater(() -> outputArea.setText(result));
+            }).start();
+        };
+
+        askBtn.setOnAction(queryHandler);
+        questionInput.setOnAction(queryHandler);
+
+        VBox layout = new VBox(12, titleLabel, hintLabel, inputRow, outputArea);
+        layout.setPadding(new Insets(24));
+        layout.setStyle("-fx-background-color: #0d1117;");
+
+        javafx.scene.Scene scene = new javafx.scene.Scene(layout, 700, 550);
+        scene.getStylesheets().add(getClass().getResource("/styles/app.css").toExternalForm());
+        aiStage.setScene(scene);
+        aiStage.show();
+
+        questionInput.requestFocus();
+    }
+
 }
