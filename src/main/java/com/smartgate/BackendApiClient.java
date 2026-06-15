@@ -12,6 +12,7 @@ import java.util.Collections;
 import java.util.List;
 import com.smartgate.model.Visitor;
 import com.smartgate.model.Device;
+import com.smartgate.model.Resident;
 
 public class BackendApiClient {
 
@@ -143,4 +144,22 @@ public class BackendApiClient {
         String response = put("/visitors/" + id + "/" + action);
         return response == null ? null : gson.fromJson(response, Visitor.class);
     }
+
+    public List<Resident> getResidents() {
+        String response = get("/residents");
+        if (response == null || response.isBlank()) return Collections.emptyList();
+        Resident[] residents = gson.fromJson(response, Resident[].class);
+        return residents == null ? Collections.emptyList() : Arrays.asList(residents);
+    }
+
+    public Resident createResident(String fullName, String phone, String rfidId, Long apartmentId) {
+        JsonObject body = new JsonObject();
+        body.addProperty("fullName", fullName);
+        body.addProperty("phone", phone);
+        body.addProperty("rfidId", rfidId);
+        if (apartmentId != null) body.addProperty("apartmentId", apartmentId);
+        String response = post("/residents", gson.toJson(body));
+        return response == null ? null : gson.fromJson(response, Resident.class);
+    }
+
 }

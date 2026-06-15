@@ -7,16 +7,39 @@ import java.net.*;
 import java.util.function.Consumer;
 
 public class IntercomClient {
+    // Operation kodları (Constants.java'dan alındı)
     private static final int INTERCOM_COMMAND_PORT = 5432;
-    private static final int OPERATION_DOOR_UNLOCK = 12;
-    private static final int OPERATION_HANDSHAKE_GUVENLIK = 42;
-    private static final int INTERCOM_LISTEN_PORT = 50556;
+    private static final int INTERCOM_LISTEN_PORT = 5432;
+
+    public static final int OPERATION_DOOR_UNLOCK = 12;
+    public static final int OPERATION_HANDSHAKE_GUVENLIK = 42;
+    public static final int OPERATION_HANDSHAKE_GUVENLIK_RESPONSE = 43;
+    public static final int OPERATION_ALARM_TRIGGERED = 47;
+    public static final int OPERATION_ALARM_TRIGGERED_FOR_SECONDARY = 53;
+    public static final int OPERATION_ARAMA_REQUEST = 9;
+    public static final int OPERATION_ARAMA_REQUEST_RESPONSE = 10;
+    public static final int OPERATION_ARAMA_REQUEST_CANCEL = 11;
+    public static final int OPERATION_CALL_DAIRE_REQ = 91;
+    public static final int OPERATION_CALL_DAIRE_RESP = 92;
+    public static final int OPERATION_CALL_DAIRE_ANSWERED = 93;
+    public static final int OPERATION_CALL_HANGUP_BY_REMOTE = 94;
+    public static final int OPERATION_CLOSE_TRIGGERED_ALARM = 52;
+    public static final int OPERATION_CHECK_CONNECTION = 65;
+    public static final int OPERATION_CHECK_CONNECTION_RESPONSE = 66;
+    public static final int OPERATION_MESSAGE = 13;
+    public static final int OPERATION_MESSAGE_READ_BY_RECEIVER = 36;
+    public static final int OPERATION_KAPI_ZILI_STATE = 50;
+    public static final int OPERATION_EV_GUVENLIK_STATE = 30;
+    public static final int OPERATION_HANDSHAKE_DAIRE = 1;
+    public static final int OPERATION_HANDSHAKE_ZIL_PANEL = 3;
+    public static final int OPERATION_GET_DATE_TIME = 7;
+    public static final int OPERATION_ADD_NEW_DAIRE = 5;
 
     private final String intercomIp;
     private final Gson gson = new Gson();
     private boolean isListening = false;
     private ServerSocket activeServerSocket = null;
-    private java.util.function.Consumer<byte[]> videoFrameListener = null;
+    private Consumer<byte[]> videoFrameListener = null;
 
     public IntercomClient(String intercomIp) {
         this.intercomIp = intercomIp;
@@ -27,8 +50,7 @@ public class IntercomClient {
             try (Socket socket = new Socket(intercomIp, INTERCOM_COMMAND_PORT);
                  PrintWriter out = new PrintWriter(
                          new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())),
-                         true
-                 )) {
+                         true)) {
                 String jsonMessage = gson.toJson(model);
                 out.println(jsonMessage);
                 out.flush();
@@ -39,6 +61,22 @@ public class IntercomClient {
         });
         commandThread.setDaemon(true);
         commandThread.start();
+    }
+
+    public void sendCommandToIp(String ip, ComPackageModel model) {
+        new Thread(() -> {
+            try (Socket socket = new Socket(ip, INTERCOM_COMMAND_PORT);
+                 PrintWriter out = new PrintWriter(
+                         new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())),
+                         true)) {
+                String jsonMessage = gson.toJson(model);
+                out.println(jsonMessage);
+                out.flush();
+                System.out.println("Komut gönderildi: " + ip + " → " + jsonMessage);
+            } catch (Exception e) {
+                System.err.println("Komut gönderilemedi: " + ip + " - " + e.getMessage());
+            }
+        }).start();
     }
 
     public void unlockDoor() {
@@ -57,15 +95,44 @@ public class IntercomClient {
         sendCommand(packet);
     }
 
+    public void answerCall() {
+        ComPackageModel packet = new ComPackageModel();
+        packet.setOpe_type(OPERATION_ARAMA_REQUEST_RESPONSE);
+        packet.setNeedResponse(false);
+        sendCommand(packet);
+    }
+
+    public void cancelCall() {
+        ComPackageModel packet = new ComPackageModel();
+        packet.setOpe_type(OPERATION_ARAMA_REQUEST_CANCEL);
+        packet.setNeedResponse(false);
+        sendCommand(packet);
+    }
+
+    public void closeAlarm(int alarmId) {
+        ComPackageModel packet = new ComPackageModel();
+        packet.setOpe_type(OPERATION_CLOSE_TRIGGERED_ALARM);
+        packet.setNeedResponse(false);
+        packet.setDataInt(alarmId);
+        sendCommand(packet);
+    }
+
+    public void sendMessageToApartment(String apartmentIp, String message) {
+        ComPackageModel packet = new ComPackageModel();
+        packet.setOpe_type(OPERATION_MESSAGE);
+        packet.setNeedResponse(false);
+        packet.setDataString(message);
+        sendCommandToIp(apartmentIp, packet);
+    }
+
     public void stopListening() {
         isListening = false;
         if (activeServerSocket != null) {
-            try {
-                activeServerSocket.close();
-            } catch (Exception ignored) {}
+            try { activeServerSocket.close(); } catch (Exception ignored) {}
         }
     }
-    public void setVideoFrameListener(java.util.function.Consumer<byte[]> listener) {
+
+    public void setVideoFrameListener(Consumer<byte[]> listener) {
         this.videoFrameListener = listener;
     }
 
@@ -89,7 +156,6 @@ public class IntercomClient {
 
                         if (header[0] == (byte)0xDE && header[1] == (byte)0xAD
                                 && header[2] == (byte)0xBE && header[3] == (byte)0xEF) {
-                            // Video frame — boyutu oku
                             byte[] sizeBuf = new byte[3];
                             is.read(sizeBuf, 0, 3);
                             int length = ((sizeBuf[0] & 0xFF) << 16)
@@ -103,14 +169,11 @@ public class IntercomClient {
                                     if (r < 0) break;
                                     total += r;
                                 }
-                                if (videoFrameListener != null) {
-                                    videoFrameListener.accept(frameData);
-                                }
+                                if (videoFrameListener != null) videoFrameListener.accept(frameData);
                                 System.out.println("Video frame alındı: " + length + " bytes");
                             }
                         } else {
-                            BufferedReader reader = new BufferedReader(
-                                    new InputStreamReader(is));
+                            BufferedReader reader = new BufferedReader(new InputStreamReader(is));
                             String rest = reader.readLine();
                             if (rest == null) continue;
                             String json = new String(header) + rest;
@@ -128,28 +191,4 @@ public class IntercomClient {
             }
         }).start();
     }
-
-    private static final int OPERATION_SEND_MESSAGE = 30; // Gerçek kod gelince değiştir
-
-    public void sendMessageToApartment(String apartmentIp, String message) {
-        ComPackageModel packet = new ComPackageModel();
-        packet.setOpe_type(OPERATION_SEND_MESSAGE);
-        packet.setNeedResponse(false);
-        packet.setDataString(message);
-
-        // Daire IP'sine direkt gönder
-        new Thread(() -> {
-            try (java.net.Socket socket = new java.net.Socket(apartmentIp, INTERCOM_COMMAND_PORT);
-                 java.io.PrintWriter out = new java.io.PrintWriter(
-                         new java.io.BufferedWriter(
-                                 new java.io.OutputStreamWriter(socket.getOutputStream())), true)) {
-                String json = gson.toJson(packet);
-                out.println(json);
-                System.out.println("Mesaj gönderildi: " + apartmentIp + " → " + message);
-            } catch (Exception e) {
-                System.err.println("Mesaj gönderilemedi: " + apartmentIp + " - " + e.getMessage());
-            }
-        }).start();
-    }
-
 }

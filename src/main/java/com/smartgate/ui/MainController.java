@@ -30,6 +30,8 @@ import com.smartgate.database.ChatMessageDAO;
 import com.smartgate.model.ChatMessage;
 import com.smartgate.database.ApartmentDAO;
 
+import com.smartgate.model.Resident;
+
 public class MainController {
     private final BackendApiClient backendApiClient = new BackendApiClient();
     private final IntercomClient intercomClient;
@@ -60,6 +62,12 @@ public class MainController {
     private TextField aiInput;
     private TextArea aiOutput;
     private boolean aiOpen = false;
+
+    private TableView<Resident> residentTable;
+    private TextField residentNameInput;
+    private TextField residentPhoneInput;
+    private TextField residentRfidInput;
+    private ComboBox<String> residentApartmentSelector;
 
     public MainController(IntercomClient intercomClient) {
         this.intercomClient = intercomClient;
@@ -153,8 +161,8 @@ public class MainController {
         Button handshakeBtn = new Button("🤝  Handshake");
         handshakeBtn.getStyleClass().add("btn-secondary");
         handshakeBtn.setMaxWidth(Double.MAX_VALUE);
-        handshakeBtn.setOnAction(e -> intercomClient.sendSecurityHandshake(1, "10.194.166.78"));
-
+        handshakeBtn.setOnAction(e -> intercomClient.sendSecurityHandshake(1,
+                com.smartgate.ConfigManager.get("LOCAL_IP", "172.1.0.1")));
         Button refreshBtn = new Button("🔄  Yenile");
         refreshBtn.getStyleClass().add("btn-secondary");
         refreshBtn.setMaxWidth(Double.MAX_VALUE);
@@ -170,7 +178,7 @@ public class MainController {
         testCallBtn.setMaxWidth(Double.MAX_VALUE);
         testCallBtn.setOnAction(e -> {
             com.smartgate.network.ComPackageModel testPacket = new com.smartgate.network.ComPackageModel();
-            testPacket.setOpe_type(43);
+            testPacket.setOpe_type(IntercomClient.OPERATION_ARAMA_REQUEST);
             testPacket.setDataString("Daire 12A");
             showIncomingCallPopup(testPacket);
         });
@@ -271,7 +279,8 @@ public class MainController {
         VBox visitorsBox = buildTableBox("👥  Ziyaretçi Kayıtları", buildVisitorSection());
         VBox devicesBox = buildTableBox("🖥  Cihaz Yönetimi", buildDeviceSection());
 
-        VBox center = new VBox(12, topRow, visitorsBox, devicesBox);
+        VBox residentsBox = buildTableBox("👤  Sakin Yönetimi", buildResidentSection());
+        VBox center = new VBox(12, topRow, visitorsBox, devicesBox, residentsBox);
         center.setPadding(new Insets(16));
 
         ScrollPane scroll = new ScrollPane(center);
@@ -465,7 +474,7 @@ public class MainController {
 
     private void startIntercomListener() {
         intercomClient.startListening(packet -> {
-            if (packet.getOpe_type() == 47) {
+            if (packet.getOpe_type() == IntercomClient.OPERATION_ALARM_TRIGGERED) {
                 Alarm alarm = createAlarmFromPacket(packet);
                 new Thread(() -> {
                     alarmDAO.insert(alarm);
@@ -475,7 +484,7 @@ public class MainController {
                     });
                 }).start();
             }
-            if (packet.getOpe_type() == 43) {
+            if (packet.getOpe_type() == IntercomClient.OPERATION_ARAMA_REQUEST) {
                 Platform.runLater(() -> showIncomingCallPopup(packet));
             }
         });
@@ -582,10 +591,12 @@ public class MainController {
             }
             List<Visitor> visitors = backendApiClient.getVisitors();
             List<Device> devices = backendApiClient.getDevices();
+            List<Resident> residents = backendApiClient.getResidents();
             Platform.runLater(() -> {
                 gateLogTable.setItems(FXCollections.observableArrayList(logs));
                 visitorTable.setItems(FXCollections.observableArrayList(visitors));
                 deviceTable.setItems(FXCollections.observableArrayList(devices));
+                residentTable.setItems(FXCollections.observableArrayList(residents));
             });
         }).start();
     }
@@ -1103,4 +1114,102 @@ public class MainController {
         chatStage.setScene(scene);
         chatStage.show();
     }
+
+    private VBox buildResidentSection() {
+        residentNameInput = new TextField();
+        residentNameInput.setPromptText("Ad Soyad");
+
+        residentPhoneInput = new TextField();
+        residentPhoneInput.setPromptText("Telefon");
+        residentPhoneInput.setPrefWidth(130);
+
+        residentRfidInput = new TextField();
+        residentRfidInput.setPromptText("RFID Kart No");
+        residentRfidInput.setPrefWidth(120);
+
+        residentApartmentSelector = new ComboBox<>();
+        residentApartmentSelector.setPromptText("Daire seç...");
+        residentApartmentSelector.setEditable(true);
+        residentApartmentSelector.setPrefWidth(150);
+
+        new Thread(() -> {
+            List<String> apts = apartmentDAO.getAllApartments();
+            Platform.runLater(() -> residentApartmentSelector.getItems().addAll(apts));
+        }).start();
+
+        Button saveBtn = new Button("➕ Sakin Ekle");
+        saveBtn.getStyleClass().add("btn-primary");
+        saveBtn.setOnAction(e -> saveResident());
+
+        HBox form = new HBox(8,
+                residentNameInput, residentPhoneInput,
+                residentRfidInput, residentApartmentSelector, saveBtn
+        );
+        HBox.setHgrow(residentNameInput, Priority.ALWAYS);
+        form.setAlignment(Pos.CENTER_LEFT);
+
+        residentTable = new TableView<>();
+        residentTable.setPlaceholder(new Label("Kayıtlı sakin yok"));
+        residentTable.setPrefHeight(180);
+
+        TableColumn<Resident, String> nameCol = new TableColumn<>("Ad Soyad");
+        nameCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                d.getValue().getFullName()
+        ));
+
+        TableColumn<Resident, String> phoneCol = new TableColumn<>("Telefon");
+        phoneCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                d.getValue().getPhone()
+        ));
+        phoneCol.setPrefWidth(120);
+
+        TableColumn<Resident, String> rfidCol = new TableColumn<>("RFID");
+        rfidCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                d.getValue().getRfidId()
+        ));
+        rfidCol.setPrefWidth(100);
+
+        TableColumn<Resident, String> aptCol = new TableColumn<>("Daire");
+        aptCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                d.getValue().getApartmentId() != null ? "Daire " + d.getValue().getApartmentId() : "-"
+        ));
+        aptCol.setPrefWidth(80);
+
+        residentTable.getColumns().addAll(nameCol, phoneCol, rfidCol, aptCol);
+        residentTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+
+        return new VBox(8, form, residentTable);
+    }
+
+    private void saveResident() {
+        String name = residentNameInput.getText().trim();
+        if (name.isEmpty()) return;
+
+        String aptSelected = residentApartmentSelector.getValue();
+        Long aptId = null;
+        if (aptSelected != null && aptSelected.contains("-")) {
+            String[] parts = aptSelected.split("-", 2);
+            aptId = apartmentDAO.getApartmentId(parts[0].trim(), parts[1].trim());
+        }
+
+        final Long finalAptId = aptId;
+        new Thread(() -> {
+            Resident r = backendApiClient.createResident(
+                    name,
+                    residentPhoneInput.getText().trim(),
+                    residentRfidInput.getText().trim(),
+                    finalAptId
+            );
+            Platform.runLater(() -> {
+                if (r != null) {
+                    residentNameInput.clear();
+                    residentPhoneInput.clear();
+                    residentRfidInput.clear();
+                    residentApartmentSelector.setValue(null);
+                    refreshTables();
+                }
+            });
+        }).start();
+    }
+
 }

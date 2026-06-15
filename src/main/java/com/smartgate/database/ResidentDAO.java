@@ -8,22 +8,6 @@ import java.util.List;
 
 public class ResidentDAO {
 
-    public void insert(Resident resident) {
-        String sql = "INSERT INTO residents (block_no, apartment_no, full_name, phone, rfid_id) VALUES (?, ?, ?, ?, ?)";
-        try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, resident.getBlockNo());
-            stmt.setString(2, resident.getApartmentNo());
-            stmt.setString(3, resident.getFullName());
-            stmt.setString(4, resident.getPhone());
-            stmt.setString(5, resident.getRfidId());
-            stmt.executeUpdate();
-            System.out.println("Resident kaydedildi.");
-        } catch (SQLException e) {
-            System.err.println("Resident insert hatası: " + e.getMessage());
-        }
-    }
-
     public List<Resident> getAll() {
         List<Resident> residents = new ArrayList<>();
         String sql = "SELECT * FROM residents ORDER BY full_name";
@@ -32,12 +16,12 @@ public class ResidentDAO {
              ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
                 Resident r = new Resident();
-                r.setId(rs.getInt("id"));
-                r.setBlockNo(rs.getString("block_no"));
-                r.setApartmentNo(rs.getString("apartment_no"));
+                r.setId(rs.getLong("id"));
                 r.setFullName(rs.getString("full_name"));
                 r.setPhone(rs.getString("phone"));
                 r.setRfidId(rs.getString("rfid_id"));
+                r.setApartmentId(rs.getLong("apartment_id"));
+                r.setActive(rs.getBoolean("is_active"));
                 residents.add(r);
             }
         } catch (SQLException e) {
@@ -54,12 +38,12 @@ public class ResidentDAO {
             ResultSet rs = stmt.executeQuery();
             if (rs.next()) {
                 Resident r = new Resident();
-                r.setId(rs.getInt("id"));
-                r.setBlockNo(rs.getString("block_no"));
-                r.setApartmentNo(rs.getString("apartment_no"));
+                r.setId(rs.getLong("id"));
                 r.setFullName(rs.getString("full_name"));
                 r.setPhone(rs.getString("phone"));
                 r.setRfidId(rs.getString("rfid_id"));
+                r.setApartmentId(rs.getLong("apartment_id"));
+                r.setActive(rs.getBoolean("is_active"));
                 return r;
             }
         } catch (SQLException e) {
