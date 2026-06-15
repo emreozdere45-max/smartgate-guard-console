@@ -124,19 +124,25 @@ public class MainController {
         Button unlockBtn = new Button("🔓  Kapıyı Aç");
         unlockBtn.getStyleClass().add("btn-primary");
         unlockBtn.setMaxWidth(Double.MAX_VALUE);
-        unlockBtn.setOnAction(e -> new Thread(() -> {
-            String selected = deviceSelector.getValue();
-            Long deviceId = 1L;
-            if (selected != null && selected.contains("|")) {
-                try {
-                    deviceId = Long.parseLong(selected.split("\\|")[0].trim());
-                } catch (Exception ex) { deviceId = 1L; }
-            }
-            final Long finalDeviceId = deviceId;
-            boolean success = backendApiClient.unlockDeviceDoor(finalDeviceId);
-            if (!success) intercomClient.unlockDoor();
-            Platform.runLater(this::refreshTables);
-        }).start());
+        unlockBtn.setOnAction(e -> {
+            Platform.runLater(() -> unlockBtn.setDisable(true));
+            new Thread(() -> {
+                String selected = deviceSelector.getValue();
+                Long deviceId = 1L;
+                if (selected != null && selected.contains("|")) {
+                    try {
+                        deviceId = Long.parseLong(selected.split("\\|")[0].trim());
+                    } catch (Exception ex) { deviceId = 1L; }
+                }
+                final Long finalDeviceId = deviceId;
+                boolean success = backendApiClient.unlockDeviceDoor(finalDeviceId);
+                if (!success) intercomClient.unlockDoor();
+                Platform.runLater(() -> {
+                    unlockBtn.setDisable(false);
+                    refreshTables();
+                });
+            }).start();
+        });
 
         Button handshakeBtn = new Button("🤝  Handshake");
         handshakeBtn.getStyleClass().add("btn-secondary");
@@ -557,12 +563,10 @@ public class MainController {
             } else {
                 logs = gateLogDAO.getAll();
             }
-            List<Alarm> alarms = alarmDAO.getUnresolved();
             List<Visitor> visitors = backendApiClient.getVisitors();
             List<Device> devices = backendApiClient.getDevices();
             Platform.runLater(() -> {
                 gateLogTable.setItems(FXCollections.observableArrayList(logs));
-                alarmTable.setItems(FXCollections.observableArrayList(alarms));
                 visitorTable.setItems(FXCollections.observableArrayList(visitors));
                 deviceTable.setItems(FXCollections.observableArrayList(devices));
             });
