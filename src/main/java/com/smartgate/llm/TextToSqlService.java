@@ -7,8 +7,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Locale;
 
 public class TextToSqlService {
     private final OllamaClient ollamaClient = new OllamaClient();
@@ -34,6 +33,9 @@ public class TextToSqlService {
         - Daire bilgisi visitors tablosunda block_name ve apartment_no kolonlarindadir.
         - Bugunku ziyaretciler icin: entry_time >= CURRENT_DATE AND entry_time < CURRENT_DATE + INTERVAL '1 day'
         - Bugunku kapi loglari icin: event_time >= CURRENT_DATE AND event_time < CURRENT_DATE + INTERVAL '1 day'
+        - Alarm sorularinda kullanici "tum", "toplam", "gecmis" veya "cozulen" demediyse sadece aktif alarmlari listele/say.
+        - Aktif alarm demek: alarms.is_resolved = false.
+        - Cozulen alarm demek: alarms.is_resolved = true.
 
         Ornekler:
         Soru: Bugun kimler giris yapti?
@@ -111,11 +113,20 @@ public class TextToSqlService {
         Soru: Aktif alarmlari listele
         SQL: SELECT alarm_time, alarm_type, severity, apartment_id, source_label FROM alarms WHERE is_resolved = false ORDER BY alarm_time DESC
 
+        Soru: Kac alarm var?
+        SQL: SELECT COUNT(*) AS aktif_alarm_sayisi FROM alarms WHERE is_resolved = false
+
+        Soru: Kac tane aktif alarm var?
+        SQL: SELECT COUNT(*) AS aktif_alarm_sayisi FROM alarms WHERE is_resolved = false
+
         Soru: Bugunku alarmlari goster
         SQL: SELECT alarm_time, alarm_type, severity, apartment_id, source_label, is_resolved FROM alarms WHERE alarm_time >= CURRENT_DATE AND alarm_time < CURRENT_DATE + INTERVAL '1 day' ORDER BY alarm_time DESC
 
         Soru: Cozulmemis alarmlar hangileri?
         SQL: SELECT alarm_time, alarm_type, severity, apartment_id, source_label FROM alarms WHERE is_resolved = false ORDER BY alarm_time DESC
+
+        Soru: Cozulen alarmlari listele
+        SQL: SELECT alarm_time, alarm_type, severity, apartment_id, source_label, resolved_at FROM alarms WHERE is_resolved = true ORDER BY resolved_at DESC
 
         Soru: Yangin alarmlarini listele
         SQL: SELECT alarm_time, severity, apartment_id, source_label, is_resolved FROM alarms WHERE LOWER(alarm_type) LIKE '%yangin%' OR LOWER(alarm_type) LIKE '%fire%' ORDER BY alarm_time DESC
@@ -125,6 +136,11 @@ public class TextToSqlService {
         """;
 
     public String generateSql(String userQuestion) {
+        String deterministicSql = tryBuildDeterministicSql(userQuestion);
+        if (!deterministicSql.isEmpty()) {
+            return deterministicSql;
+        }
+
         String prompt = SCHEMA_CONTEXT + "\nSoru: " + userQuestion + "\nSQL:";
         String rawResponse = ollamaClient.chat(prompt);
         return cleanSql(rawResponse);
@@ -132,14 +148,14 @@ public class TextToSqlService {
 
     public String generateAndExecute(String userQuestion) {
         String sql = generateSql(userQuestion);
-
-        if (sql.isEmpty() || sql.toLowerCase().contains("ollama")) {
-            return "Ollama bağlantısı kurulamadı.";
+        if (sql.isEmpty()) {
+            return "SQL uretilemedi.";
+        }
+        if (!isSafeSelect(sql)) {
+            return "Sadece SELECT sorgulari calistirilabilir.";
         }
 
-        if (!sql.trim().toLowerCase().startsWith("select")) {
-            return "Sadece SELECT sorguları çalıştırılabilir.";
-        }
+        StringBuilder result = new StringBuilder();
 
         try (Connection conn = DatabaseManager.getConnection();
              Statement stmt = conn.createStatement();
@@ -148,41 +164,34 @@ public class TextToSqlService {
             ResultSetMetaData meta = rs.getMetaData();
             int colCount = meta.getColumnCount();
 
-            List<String[]> rows = new ArrayList<>();
-            String[] headers = new String[colCount];
             for (int i = 1; i <= colCount; i++) {
-                headers[i-1] = meta.getColumnName(i);
-            }
-
-            while (rs.next()) {
-                String[] row = new String[colCount];
-                for (int i = 1; i <= colCount; i++) {
-                    row[i-1] = rs.getString(i) != null ? rs.getString(i) : "-";
+                result.append(meta.getColumnName(i));
+                if (i < colCount) {
+                    result.append(" | ");
                 }
-                rows.add(row);
+            }
+            result.append("\n").append("-".repeat(60)).append("\n");
+
+            int rowCount = 0;
+            while (rs.next()) {
+                for (int i = 1; i <= colCount; i++) {
+                    result.append(rs.getString(i));
+                    if (i < colCount) {
+                        result.append(" | ");
+                    }
+                }
+                result.append("\n");
+                rowCount++;
             }
 
-            if (rows.isEmpty()) {
-                return "Sonuç bulunamadı.";
+            if (rowCount == 0) {
+                result.append("Sonuc bulunamadi.");
             }
-
-            // Türkçe yorum için Ollama'ya sor
-            StringBuilder dataStr = new StringBuilder();
-            dataStr.append(String.join(" | ", headers)).append("\n");
-            for (String[] row : rows) {
-                dataStr.append(String.join(" | ", row)).append("\n");
-            }
-
-            String interpretPrompt = "Kullanıcı şunu sordu: \"" + userQuestion + "\"\n" +
-                    "Veritabanından şu veri geldi:\n" + dataStr +
-                    "\nBu veriyi kullanıcıya Türkçe, kısa ve net bir şekilde açıkla. " +
-                    "SQL veya teknik detay yazma, sadece cevabı ver.";
-
-            return ollamaClient.chat(interpretPrompt);
-
         } catch (SQLException e) {
-            return "Sorgu çalıştırılamadı: " + e.getMessage();
+            result.append("Sorgu hatasi: ").append(e.getMessage());
         }
+
+        return result.toString();
     }
 
     private String cleanSql(String raw) {
@@ -196,5 +205,57 @@ public class TextToSqlService {
     private boolean isSafeSelect(String sql) {
         String normalized = sql.trim().toLowerCase();
         return normalized.startsWith("select") && !normalized.contains(";");
+    }
+
+    private String tryBuildDeterministicSql(String userQuestion) {
+        String question = normalizeQuestion(userQuestion);
+        if (!question.contains("alarm")) {
+            return "";
+        }
+
+        boolean asksCount = question.contains("kac") ||
+                question.contains("sayisi") ||
+                question.contains("adet");
+        boolean asksResolved = question.contains("cozulen") ||
+                question.contains("cozuldu") ||
+                question.contains("kapali");
+        boolean asksAllHistory = question.contains("tum") ||
+                question.contains("butun") ||
+                question.contains("toplam kayit") ||
+                question.contains("gecmis");
+
+        if (asksResolved && asksCount) {
+            return "SELECT COUNT(*) AS cozulen_alarm_sayisi FROM alarms WHERE is_resolved = true";
+        }
+
+        if (asksResolved) {
+            return "SELECT alarm_time, alarm_type, severity, apartment_id, source_label, resolved_at FROM alarms WHERE is_resolved = true ORDER BY resolved_at DESC";
+        }
+
+        if (asksAllHistory && asksCount) {
+            return "SELECT COUNT(*) AS toplam_alarm_kaydi FROM alarms";
+        }
+
+        if (asksAllHistory) {
+            return "SELECT alarm_time, alarm_type, severity, apartment_id, source_label, is_resolved, resolved_at FROM alarms ORDER BY alarm_time DESC";
+        }
+
+        if (asksCount) {
+            return "SELECT COUNT(*) AS aktif_alarm_sayisi FROM alarms WHERE is_resolved = false";
+        }
+
+        return "SELECT alarm_time, alarm_type, severity, apartment_id, source_label FROM alarms WHERE is_resolved = false ORDER BY alarm_time DESC";
+    }
+
+    private String normalizeQuestion(String value) {
+        return value == null ? "" : value
+                .toLowerCase(Locale.forLanguageTag("tr-TR"))
+                .replace('ı', 'i')
+                .replace('İ', 'i')
+                .replace('ğ', 'g')
+                .replace('ü', 'u')
+                .replace('ş', 's')
+                .replace('ö', 'o')
+                .replace('ç', 'c');
     }
 }
