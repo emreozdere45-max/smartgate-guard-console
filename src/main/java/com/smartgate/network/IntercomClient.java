@@ -128,4 +128,28 @@ public class IntercomClient {
             }
         }).start();
     }
+
+    private static final int OPERATION_SEND_MESSAGE = 30; // Gerçek kod gelince değiştir
+
+    public void sendMessageToApartment(String apartmentIp, String message) {
+        ComPackageModel packet = new ComPackageModel();
+        packet.setOpe_type(OPERATION_SEND_MESSAGE);
+        packet.setNeedResponse(false);
+        packet.setDataString(message);
+
+        // Daire IP'sine direkt gönder
+        new Thread(() -> {
+            try (java.net.Socket socket = new java.net.Socket(apartmentIp, INTERCOM_COMMAND_PORT);
+                 java.io.PrintWriter out = new java.io.PrintWriter(
+                         new java.io.BufferedWriter(
+                                 new java.io.OutputStreamWriter(socket.getOutputStream())), true)) {
+                String json = gson.toJson(packet);
+                out.println(json);
+                System.out.println("Mesaj gönderildi: " + apartmentIp + " → " + message);
+            } catch (Exception e) {
+                System.err.println("Mesaj gönderilemedi: " + apartmentIp + " - " + e.getMessage());
+            }
+        }).start();
+    }
+
 }
