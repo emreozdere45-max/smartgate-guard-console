@@ -159,6 +159,15 @@ public class MainController {
         testAlarmBtn.setMaxWidth(Double.MAX_VALUE);
         testAlarmBtn.setOnAction(e -> triggerTestAlarm());
 
+        Button testCallBtn = new Button("📞  Test Zil");
+        testCallBtn.getStyleClass().add("btn-secondary");
+        testCallBtn.setMaxWidth(Double.MAX_VALUE);
+        testCallBtn.setOnAction(e -> {
+            com.smartgate.network.ComPackageModel testPacket = new com.smartgate.network.ComPackageModel();
+            testPacket.setOpe_type(43);
+            testPacket.setDataString("Daire 12A");
+            showIncomingCallPopup(testPacket);
+        });
         Button alarmHistoryBtn = new Button("🔔  Alarm Geçmişi");
         alarmHistoryBtn.getStyleClass().add("btn-secondary");
         alarmHistoryBtn.setMaxWidth(Double.MAX_VALUE);
@@ -240,7 +249,7 @@ public class MainController {
         VBox panel = new VBox(10,
                 connLabel,
                 deviceSelector,
-                unlockBtn, handshakeBtn, alarmHistoryBtn,
+                unlockBtn, handshakeBtn, alarmHistoryBtn, testCallBtn,
                 new Separator(),
                 refreshBtn, testAlarmBtn,
                 new Separator(),
@@ -473,6 +482,9 @@ public class MainController {
                         showAlarmPopup(alarm);
                     });
                 }).start();
+            }
+            if (packet.getOpe_type() == 43) {
+                Platform.runLater(() -> showIncomingCallPopup(packet));
             }
         });
     }
@@ -807,5 +819,71 @@ public class MainController {
         scene.getStylesheets().add(getClass().getResource("/styles/app.css").toExternalForm());
         historyStage.setScene(scene);
         historyStage.show();
+    }
+    private void showIncomingCallPopup(com.smartgate.network.ComPackageModel packet) {
+        javafx.stage.Stage callStage = new javafx.stage.Stage();
+        callStage.setTitle("📞 Gelen Arama");
+        callStage.initStyle(javafx.stage.StageStyle.UNDECORATED);
+
+        Label callerLabel = new Label("📞 Zil Çalıyor");
+        callerLabel.setStyle("-fx-text-fill: #ffffff; -fx-font-size: 24px; -fx-font-weight: bold;");
+
+        String callerInfo = packet.getDataString() != null ? packet.getDataString() : "Bilinmiyor";
+        Label infoLabel = new Label("Daire: " + callerInfo);
+        infoLabel.setStyle("-fx-text-fill: #8b949e; -fx-font-size: 16px;");
+
+        Button acceptBtn = new Button("✓ Kabul Et & Kapıyı Aç");
+        acceptBtn.setStyle("-fx-background-color: #238636; -fx-text-fill: white; -fx-font-size: 14px; -fx-padding: 12 24 12 24; -fx-background-radius: 8; -fx-cursor: hand;");
+        acceptBtn.setOnAction(e -> {
+            new Thread(() -> {
+                String selected = deviceSelector != null ? deviceSelector.getValue() : null;
+                Long deviceId = 1L;
+                if (selected != null && selected.contains("|")) {
+                    try { deviceId = Long.parseLong(selected.split("\\|")[0].trim()); } catch (Exception ex) {}
+                }
+                backendApiClient.unlockDeviceDoor(deviceId);
+                Platform.runLater(() -> {
+                    callStage.close();
+                    refreshTables();
+                });
+            }).start();
+        });
+
+        Button rejectBtn = new Button("✗ Reddet");
+        rejectBtn.setStyle("-fx-background-color: #da3633; -fx-text-fill: white; -fx-font-size: 14px; -fx-padding: 12 24 12 24; -fx-background-radius: 8; -fx-cursor: hand;");
+        rejectBtn.setOnAction(e -> callStage.close());
+
+        // Yanıp sönen animasyon
+        javafx.animation.Timeline blink = new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(javafx.util.Duration.millis(500),
+                        ev -> callerLabel.setOpacity(1.0)),
+                new javafx.animation.KeyFrame(javafx.util.Duration.millis(1000),
+                        ev -> callerLabel.setOpacity(0.3))
+        );
+        blink.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        blink.play();
+
+        callStage.setOnHidden(e -> blink.stop());
+
+        HBox buttons = new HBox(16, acceptBtn, rejectBtn);
+        buttons.setAlignment(Pos.CENTER);
+
+        VBox layout = new VBox(20, callerLabel, infoLabel, buttons);
+        layout.setAlignment(Pos.CENTER);
+        layout.setPadding(new Insets(40));
+        layout.setStyle("-fx-background-color: #161b22; -fx-border-color: #1f6feb; -fx-border-width: 2; -fx-border-radius: 12; -fx-background-radius: 12;");
+
+        javafx.scene.Scene scene = new javafx.scene.Scene(layout, 400, 250);
+        scene.getStylesheets().add(getClass().getResource("/styles/app.css").toExternalForm());
+        callStage.setScene(scene);
+        callStage.show();
+
+        // 30 saniye sonra otomatik kapat
+        new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(javafx.util.Duration.seconds(30), e -> {
+                    blink.stop();
+                    callStage.close();
+                })
+        ).play();
     }
 }
