@@ -29,7 +29,7 @@ import com.smartgate.model.Device;
 import com.smartgate.database.ChatMessageDAO;
 import com.smartgate.model.ChatMessage;
 import com.smartgate.database.ApartmentDAO;
-
+import com.smartgate.network.ComPackageModel;
 import com.smartgate.model.Resident;
 
 public class MainController {
@@ -476,13 +476,15 @@ public class MainController {
         intercomClient.startListening(packet -> {
             System.out.println("Paket geldi: ope_type=" + packet.getOpe_type());
 
-            if (packet.getOpe_type() == IntercomClient.OPERATION_HANDSHAKE_GUVENLIK_RESPONSE) {
-                System.out.println("✅ Cihaz bağlantısı onaylandı!");
-                com.google.gson.Gson gson = new com.google.gson.Gson();
-                System.out.println("RAW PAKET: " + gson.toJson(packet));
-                Platform.runLater(() -> {
-                    System.out.println("Cihaz bağlandı, daireler yükleniyor...");
-                });
+            if (packet.getOpe_type() == IntercomClient.OPERATION_ALARM_TRIGGERED) {
+                Alarm alarm = createAlarmFromPacket(packet);
+                new Thread(() -> {
+                    alarmDAO.insert(alarm);
+                    Platform.runLater(() -> {
+                        refreshTables();
+                        showAlarmPopup(alarm);
+                    });
+                }).start();
             }
 
             if (packet.getOpe_type() == IntercomClient.OPERATION_ARAMA_REQUEST) {
@@ -491,10 +493,40 @@ public class MainController {
 
             if (packet.getOpe_type() == IntercomClient.OPERATION_HANDSHAKE_GUVENLIK_RESPONSE) {
                 System.out.println("✅ Cihaz bağlantısı onaylandı!");
-                Platform.runLater(() -> {
-                    // Sol paneldeki durum göstergesi güncellenebilir
-                    System.out.println("Cihaz bağlandı, daireler yükleniyor...");
-                });
+                if (packet.getDaires() != null) {
+                    new Thread(() -> {
+                        List<Device> mevcutDevices = backendApiClient.getDevices();
+                        List<String> mevcutIpler = mevcutDevices.stream()
+                                .map(Device::getIpAddress)
+                                .toList();
+
+                        for (ComPackageModel.DaireInfo daire : packet.getDaires()) {
+                            String ip = daire.getIp();
+                            if (mevcutIpler.contains(ip)) {
+                                System.out.println("Zaten var, atlanıyor: " + ip);
+                                continue;
+                            }
+                            String name = "Blok " + daire.getBlok() + " Daire " + daire.getDaireNo();
+                            backendApiClient.createDevice(name, ip, 5432, "Kat " + daire.getKatNo());
+                            System.out.println("Daire eklendi: " + name + " → " + ip);
+                        }
+
+                        if (packet.getZilPanel() != null) {
+                            String zilIp = packet.getZilPanel().getIp();
+                            String zilName = packet.getZilPanel().getDeviceName() != null ?
+                                    packet.getZilPanel().getDeviceName() : "Zil Paneli";
+                            if (!mevcutIpler.contains(zilIp)) {
+                                backendApiClient.createDevice(zilName, zilIp, 5432,
+                                        "Blok " + packet.getZilPanel().getBlok());
+                                System.out.println("Zil paneli eklendi: " + zilName + " → " + zilIp);
+                            } else {
+                                System.out.println("Zil paneli zaten var: " + zilIp);
+                            }
+                        }
+
+                        Platform.runLater(() -> refreshTables());
+                    }).start();
+                }
             }
         });
     }
