@@ -78,4 +78,32 @@ public class ComPackageModel {
     public ZilPanelInfo getZilPanel() { return zilPanel; }
     public void setZilPanel(ZilPanelInfo zilPanel) { this.zilPanel = zilPanel; }
     public java.util.List<ZilPanelInfo> getZilPanels() { return zilPanels; }
+
+    public static class UserMessageInfo {
+        public int id;
+        public String text;
+        public String datetime;
+        public int senderId;
+        public int senderType; // 1=güvenlik, 2=daire
+        public String uniqueID;
+        public boolean isRead;
+        public boolean isReadByReceiver;
+        public String imagePath;
+    }
+
+    private UserMessageInfo userMessage;
+
+    public UserMessageInfo getUserMessage() { return userMessage; }
+    public void setUserMessage(UserMessageInfo userMessage) { this.userMessage = userMessage; }
+
+    public static class DaireRef {
+        public String ip;
+        public double daireNo;
+        public double blok;
+    }
+
+    private DaireRef daire;
+    public DaireRef getDaire() { return daire; }
+    public void setDaire(DaireRef daire) { this.daire = daire; }
+
 }

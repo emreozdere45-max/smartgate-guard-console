@@ -120,20 +120,11 @@ public class MainController {
         deviceSelector.getStyleClass().add("combo-box");
 
 // Cihazları yükle
-        new Thread(() -> {
-            List<com.smartgate.model.Device> devices = backendApiClient.getDevices();
-            Platform.runLater(() -> {
-                for (com.smartgate.model.Device d : devices) {
-                    deviceSelector.getItems().add(d.getId() + " | " + d.getName() + " (" + d.getIpAddress() + ")");
-                }
-                if (!deviceSelector.getItems().isEmpty()) {
-                    deviceSelector.getSelectionModel().selectFirst();
-                }
-                deviceSelector.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
-                    if (newVal != null) refreshTables();
-                });
-            });
-        }).start();
+
+        deviceSelector.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null) refreshTables();
+        });
+        refreshDeviceSelector();
 
         Button unlockBtn = new Button("🔓  Kapıyı Aç");
         unlockBtn.getStyleClass().add("btn-primary");
@@ -149,8 +140,14 @@ public class MainController {
                     } catch (Exception ex) { deviceId = 1L; }
                 }
                 final Long finalDeviceId = deviceId;
-                boolean success = backendApiClient.unlockDeviceDoor(finalDeviceId);
-                if (!success) intercomClient.unlockDoor();
+
+                // Direkt interkom'a gönder
+                intercomClient.unlockDoor();
+                System.out.println("🔓 Kapı açma komutu gönderildi!");
+
+                // Backend'e de log düşür
+                backendApiClient.unlockDeviceDoor(finalDeviceId);
+
                 Platform.runLater(() -> {
                     unlockBtn.setDisable(false);
                     refreshTables();
@@ -524,7 +521,10 @@ public class MainController {
                             }
                         }
 
-                        Platform.runLater(() -> refreshTables());
+                        Platform.runLater(() -> {
+                            refreshTables();
+                            refreshDeviceSelector();
+                        });
                     }).start();
                 }
             }
@@ -1046,21 +1046,20 @@ public class MainController {
         javafx.stage.Stage chatStage = new javafx.stage.Stage();
         chatStage.setTitle("💬 Mesajlaşma");
 
-        // Sol: Daire listesi
         ListView<String> apartmentList = new ListView<>();
         apartmentList.setPrefWidth(200);
         apartmentList.setStyle("-fx-background-color: #161b22; -fx-border-color: #30363d;");
 
-        // Daireleri yükle
         new Thread(() -> {
-            List<String> apts = apartmentDAO.getAllApartments();
+            List<Device> devices = backendApiClient.getDevices();
             Platform.runLater(() -> {
                 apartmentList.getItems().add("📢 Tüm Daireler");
-                apartmentList.getItems().addAll(apts);
+                for (Device d : devices) {
+                    apartmentList.getItems().add(d.getId() + "|" + d.getName() + " (" + d.getIpAddress() + ")");
+                }
             });
         }).start();
 
-        // Sağ: Mesaj alanı
         ListView<String> messageList = new ListView<>();
         messageList.setStyle("-fx-background-color: #0d1117; -fx-border-color: #30363d;");
 
@@ -1073,7 +1072,6 @@ public class MainController {
 
         ChatMessageDAO chatDAO = new ChatMessageDAO();
 
-        // Mesaj gönder
         javafx.event.EventHandler<javafx.event.ActionEvent> sendHandler = e -> {
             String text = messageInput.getText().trim();
             String selected = apartmentList.getSelectionModel().getSelectedItem();
@@ -1084,15 +1082,22 @@ public class MainController {
             msg.setMessageText(text);
             msg.setSentAt(java.time.ZonedDateTime.now(java.time.ZoneId.of("Europe/Istanbul")).toLocalDateTime());
 
-// Seçili daireye göre apartment_id set et
-            if (selected != null && !selected.equals("📢 Tüm Daireler") && selected.contains("-")) {
-                String[] parts = selected.split("-", 2);
-                Long aptId = apartmentDAO.getApartmentId(parts[0].trim(), parts[1].trim());
-                msg.setApartmentId(aptId);
+            String targetIp = null;
+            if (!selected.equals("📢 Tüm Daireler") && selected.contains("|")) {
+                try {
+                    Long devId = Long.parseLong(selected.split("\\|")[0].trim());
+                    msg.setDeviceId(devId);
+                } catch (Exception ex) {}
+                targetIp = selected.replaceAll(".*\\((.*)\\).*", "$1");
             }
+            final String finalTargetIp = targetIp;
 
             new Thread(() -> {
                 chatDAO.insert(msg);
+                if (finalTargetIp != null) {
+                    intercomClient.sendMessageToApartment(finalTargetIp, text);
+                    System.out.println("Mesaj gönderildi: " + finalTargetIp + " → " + text);
+                }
                 Platform.runLater(() -> {
                     messageList.getItems().add(0, "🛡 Güvenlik: " + text);
                     messageInput.clear();
@@ -1103,22 +1108,27 @@ public class MainController {
         sendMsgBtn.setOnAction(sendHandler);
         messageInput.setOnAction(sendHandler);
 
-        // Daire seçince mesajları yükle
         apartmentList.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal == null) return;
             messageList.getItems().clear();
             new Thread(() -> {
-                List<ChatMessage> msgs;
+                final List<ChatMessage> msgs;
                 if (newVal.equals("📢 Tüm Daireler")) {
                     msgs = chatDAO.getAll();
-                } else if (newVal.contains("-")) {
-                    String[] parts = newVal.split("-", 2);
-                    Long aptId = apartmentDAO.getApartmentId(parts[0].trim(), parts[1].trim());
-                    msgs = aptId != null ? chatDAO.getByApartmentId(aptId) : chatDAO.getAll();
+                } else if (newVal.contains("|")) {
+                    List<ChatMessage> temp;
+                    try {
+                        Long devId = Long.parseLong(newVal.split("\\|")[0].trim());
+                        temp = chatDAO.getByDeviceId(devId);
+                    } catch (Exception ex) {
+                        temp = chatDAO.getAll();
+                    }
+                    msgs = temp;
                 } else {
                     msgs = chatDAO.getAll();
                 }
                 Platform.runLater(() -> {
+                    messageList.getItems().clear();
                     for (ChatMessage m : msgs) {
                         String prefix = "SECURITY".equals(m.getSenderType()) ? "🛡 Güvenlik: " : "🏠 Daire: ";
                         messageList.getItems().add(prefix + m.getMessageText() +
@@ -1252,5 +1262,21 @@ public class MainController {
             });
         }).start();
     }
-
+    private void refreshDeviceSelector() {
+        new Thread(() -> {
+            List<Device> devices = backendApiClient.getDevices();
+            Platform.runLater(() -> {
+                String current = deviceSelector.getValue();
+                deviceSelector.getItems().clear();
+                for (Device d : devices) {
+                    deviceSelector.getItems().add(d.getId() + " | " + d.getName() + " (" + d.getIpAddress() + ")");
+                }
+                if (current != null && deviceSelector.getItems().contains(current)) {
+                    deviceSelector.setValue(current);
+                } else if (!deviceSelector.getItems().isEmpty()) {
+                    deviceSelector.getSelectionModel().selectFirst();
+                }
+            });
+        }).start();
+    }
 }

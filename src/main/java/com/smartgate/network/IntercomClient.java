@@ -122,7 +122,21 @@ public class IntercomClient {
         packet.setOpe_type(OPERATION_MESSAGE);
         packet.setNeedResponse(false);
         packet.setDataString(message);
+
+        ComPackageModel.DaireRef daireRef = new ComPackageModel.DaireRef();
+        daireRef.ip = apartmentIp;
+        packet.setDaire(daireRef);
+
+        ComPackageModel.UserMessageInfo userMsg = new ComPackageModel.UserMessageInfo();
+        userMsg.text = message;
+        userMsg.datetime = java.time.LocalDateTime.now().toString();
+        userMsg.senderId = 1;
+        userMsg.senderType = 1;
+        userMsg.uniqueID = java.util.UUID.randomUUID().toString();
+        packet.setUserMessage(userMsg);
+
         sendCommandToIp(apartmentIp, packet);
+        System.out.println("Mesaj gönderildi: " + apartmentIp + " → " + message);
     }
 
     public void stopListening() {

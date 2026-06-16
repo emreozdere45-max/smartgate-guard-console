@@ -9,6 +9,9 @@ public class ChatMessage {
     private String messageText;
     private LocalDateTime sentAt;
     private String deliveryStatus;
+    private Long deviceId;
+    public Long getDeviceId() { return deviceId; }
+    public void setDeviceId(Long deviceId) { this.deviceId = deviceId; }
 
     public ChatMessage() {}
 
