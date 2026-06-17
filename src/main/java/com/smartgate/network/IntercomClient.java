@@ -205,4 +205,43 @@ public class IntercomClient {
             }
         }).start();
     }
+
+    public void sendSecurityHandshakeToIp(String targetIp, int securityNo, String localIp) {
+        ComPackageModel packet = new ComPackageModel();
+        packet.setOpe_type(OPERATION_HANDSHAKE_GUVENLIK);
+        packet.setNeedResponse(true);
+        packet.setGuvenlik(new ComPackageModel.SecurityInfo(securityNo, localIp));
+        sendCommandToIp(targetIp, packet);
+    }
+
+    public void scanNetworkForDevices(java.util.function.Consumer<String> onDeviceFound) {
+        new Thread(() -> {
+            System.out.println("Ağ taraması başlıyor...");
+            for (int i = 1; i <= 10; i++) {
+                String ip = "172." + i + ".255.1";
+                try {
+                    java.net.InetAddress addr = java.net.InetAddress.getByName(ip);
+                    if (addr.isReachable(1000)) {
+                        System.out.println("Cihaz bulundu (ping): " + ip);
+                        onDeviceFound.accept(ip);
+                    } else {
+                        try (java.net.Socket s = new java.net.Socket()) {
+                            s.connect(new java.net.InetSocketAddress(ip, INTERCOM_COMMAND_PORT), 1000);
+                            System.out.println("Cihaz bulundu (TCP): " + ip);
+                            onDeviceFound.accept(ip);
+                        } catch (Exception ignored) {}
+                    }
+                } catch (Exception ignored) {}
+            }
+            System.out.println("Ağ taraması tamamlandı.");
+        }).start();
+    }
+    public void unlockDoorToIp(String targetIp) {
+        ComPackageModel packet = new ComPackageModel();
+        packet.setOpe_type(OPERATION_DOOR_UNLOCK);
+        packet.setNeedResponse(false);
+        packet.setDataInt(1);
+        sendCommandToIp(targetIp, packet);
+        System.out.println("Kapı açma komutu gönderildi: " + targetIp);
+    }
 }

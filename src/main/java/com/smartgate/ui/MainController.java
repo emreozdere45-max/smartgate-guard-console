@@ -83,6 +83,7 @@ public class MainController {
 
         startAutoRefresh();
         startIntercomListener();
+        startNetworkScan();
         videoStreamReceiver = new VideoStreamReceiver();
         videoStreamReceiver.start(videoView);
         return root;
@@ -134,18 +135,23 @@ public class MainController {
             new Thread(() -> {
                 String selected = deviceSelector.getValue();
                 Long deviceId = 1L;
+                String selectedIp = null;
                 if (selected != null && selected.contains("|")) {
                     try {
                         deviceId = Long.parseLong(selected.split("\\|")[0].trim());
                     } catch (Exception ex) { deviceId = 1L; }
+                    selectedIp = selected.replaceAll(".*\\((.*)\\).*", "$1");
                 }
                 final Long finalDeviceId = deviceId;
 
-                // Direkt interkom'a gönder
-                intercomClient.unlockDoor();
-                System.out.println("🔓 Kapı açma komutu gönderildi!");
+                if (selectedIp != null) {
+                    System.out.println("🔓 Kapı açılıyor: " + selectedIp);
+                    intercomClient.unlockDoorToIp(selectedIp);
+                } else {
+                    System.out.println("🔓 Varsayılan kapı açılıyor");
+                    intercomClient.unlockDoor();
+                }
 
-                // Backend'e de log düşür
                 backendApiClient.unlockDeviceDoor(finalDeviceId);
 
                 Platform.runLater(() -> {
@@ -158,8 +164,21 @@ public class MainController {
         Button handshakeBtn = new Button("🤝  Handshake");
         handshakeBtn.getStyleClass().add("btn-secondary");
         handshakeBtn.setMaxWidth(Double.MAX_VALUE);
-        handshakeBtn.setOnAction(e -> intercomClient.sendSecurityHandshake(1,
-                com.smartgate.ConfigManager.get("LOCAL_IP", "172.1.0.1")));
+        handshakeBtn.setOnAction(e -> {
+            new Thread(() -> {
+                List<Device> devices = backendApiClient.getDevices();
+                String localIp = com.smartgate.ConfigManager.get("LOCAL_IP", "172.1.0.1");
+                for (Device d : devices) {
+                    String ip = d.getIpAddress();
+                    // Sadece zil panellerine gönder (255.1 ile bitenler)
+                    if (ip != null && ip.endsWith("255.1")) {
+                        intercomClient.sendSecurityHandshakeToIp(ip, 1, localIp);
+                        System.out.println("Handshake gönderildi: " + ip);
+                    }
+                }
+            }).start();
+        });
+
         Button refreshBtn = new Button("🔄  Yenile");
         refreshBtn.getStyleClass().add("btn-secondary");
         refreshBtn.setMaxWidth(Double.MAX_VALUE);
@@ -192,6 +211,11 @@ public class MainController {
         alarmHistoryBtn.getStyleClass().add("btn-secondary");
         alarmHistoryBtn.setMaxWidth(Double.MAX_VALUE);
         alarmHistoryBtn.setOnAction(e -> showAlarmHistory());
+
+        Button deviceMgmtBtn = new Button("⚙  Cihaz Yönetimi");
+        deviceMgmtBtn.getStyleClass().add("btn-secondary");
+        deviceMgmtBtn.setMaxWidth(Double.MAX_VALUE);
+        deviceMgmtBtn.setOnAction(e -> showDeviceManagementWindow());
 
         Button chatBtn = new Button("💬  Mesajlaşma");
         chatBtn.getStyleClass().add("btn-secondary");
@@ -234,7 +258,7 @@ public class MainController {
         VBox panel = new VBox(10,
                 connLabel,
                 deviceSelector,
-                unlockBtn, handshakeBtn, alarmHistoryBtn, chatBtn, testCallBtn,
+                unlockBtn, handshakeBtn, alarmHistoryBtn,deviceMgmtBtn, chatBtn, testCallBtn,
                 new Separator(),
                 refreshBtn, testAlarmBtn,
                 new Separator(),
@@ -274,10 +298,10 @@ public class MainController {
 
         // ── Alt satır: Ziyaretçi Yönetimi ──
         VBox visitorsBox = buildTableBox("👥  Ziyaretçi Kayıtları", buildVisitorSection());
-        VBox devicesBox = buildTableBox("🖥  Cihaz Yönetimi", buildDeviceSection());
+        // devicesBox kaldırıldı
 
         VBox residentsBox = buildTableBox("👤  Sakin Yönetimi", buildResidentSection());
-        VBox center = new VBox(12, topRow, visitorsBox, devicesBox, residentsBox);
+        VBox center = new VBox(12, topRow, visitorsBox, residentsBox);
         center.setPadding(new Insets(16));
 
         ScrollPane scroll = new ScrollPane(center);
@@ -1269,7 +1293,10 @@ public class MainController {
                 String current = deviceSelector.getValue();
                 deviceSelector.getItems().clear();
                 for (Device d : devices) {
-                    deviceSelector.getItems().add(d.getId() + " | " + d.getName() + " (" + d.getIpAddress() + ")");
+                    // Sadece zil panellerini göster
+                    if (d.getIpAddress() != null && d.getIpAddress().endsWith("255.1")) {
+                        deviceSelector.getItems().add(d.getId() + " | " + d.getName() + " (" + d.getIpAddress() + ")");
+                    }
                 }
                 if (current != null && deviceSelector.getItems().contains(current)) {
                     deviceSelector.setValue(current);
@@ -1278,5 +1305,138 @@ public class MainController {
                 }
             });
         }).start();
+    }
+
+    private void startNetworkScan() {
+        intercomClient.scanNetworkForDevices(ip -> {
+            System.out.println("Yeni zil paneli bulundu: " + ip);
+            new Thread(() -> {
+                List<Device> mevcutDevices = backendApiClient.getDevices();
+                List<String> mevcutIpler = mevcutDevices.stream()
+                        .map(Device::getIpAddress)
+                        .toList();
+                if (!mevcutIpler.contains(ip)) {
+                    intercomClient.sendSecurityHandshakeToIp(ip, 1,
+                            com.smartgate.ConfigManager.get("LOCAL_IP", "172.1.0.1"));
+                    System.out.println("Yeni panel bulundu, handshake gönderildi: " + ip);
+                } else {
+                    intercomClient.sendSecurityHandshakeToIp(ip, 1,
+                            com.smartgate.ConfigManager.get("LOCAL_IP", "172.1.0.1"));
+                    System.out.println("Zaten kayıtlı, handshake yenilendi: " + ip);
+                }
+            }).start();
+        });
+    }
+
+    private void showDeviceManagementWindow() {
+        javafx.stage.Stage stage = new javafx.stage.Stage();
+        stage.setTitle("⚙ Cihaz Yönetimi");
+
+        // Form
+        TextField nameInput = new TextField();
+        nameInput.setPromptText("Cihaz adı");
+
+        TextField ipInput = new TextField();
+        ipInput.setPromptText("IP Adresi");
+        ipInput.setPrefWidth(150);
+
+        TextField portInput = new TextField("5432");
+        portInput.setPrefWidth(70);
+        portInput.textProperty().addListener((obs, oldVal, newVal) -> {
+            if (!newVal.matches("\\d*")) portInput.setText(newVal.replaceAll("[^\\d]", ""));
+        });
+
+        TextField locationInput = new TextField();
+        locationInput.setPromptText("Konum");
+
+        Button saveBtn = new Button("➕ Cihaz Ekle");
+        saveBtn.getStyleClass().add("btn-primary");
+
+        HBox form = new HBox(8, nameInput, ipInput, portInput, locationInput, saveBtn);
+        HBox.setHgrow(nameInput, Priority.ALWAYS);
+        HBox.setHgrow(locationInput, Priority.ALWAYS);
+        form.setAlignment(Pos.CENTER_LEFT);
+        form.setPadding(new Insets(8));
+
+        // Tablo
+        TableView<Device> table = new TableView<>();
+        table.setPlaceholder(new Label("Kayıtlı cihaz yok"));
+
+        TableColumn<Device, String> nameCol = new TableColumn<>("Cihaz Adı");
+        nameCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(d.getValue().getName()));
+
+        TableColumn<Device, String> ipCol = new TableColumn<>("IP Adresi");
+        ipCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(d.getValue().getIpAddress()));
+        ipCol.setPrefWidth(130);
+
+        TableColumn<Device, String> portCol = new TableColumn<>("Port");
+        portCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+                String.valueOf(d.getValue().getCommandPort())));
+        portCol.setPrefWidth(60);
+
+        TableColumn<Device, String> locationCol = new TableColumn<>("Konum");
+        locationCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(d.getValue().getLocation()));
+
+        TableColumn<Device, Void> actionCol = new TableColumn<>("");
+        actionCol.setCellFactory(col -> new TableCell<>() {
+            private final Button unlockBtn = new Button("🔓 Aç");
+            {
+                unlockBtn.getStyleClass().add("btn-primary");
+                unlockBtn.setOnAction(e -> {
+                    Device device = getTableView().getItems().get(getIndex());
+                    new Thread(() -> {
+                        intercomClient.unlockDoorToIp(device.getIpAddress());
+                        Platform.runLater(() -> table.refresh());
+                    }).start();
+                });
+            }
+            @Override protected void updateItem(Void v, boolean empty) {
+                super.updateItem(v, empty);
+                setGraphic(empty ? null : unlockBtn);
+            }
+        });
+        actionCol.setPrefWidth(80);
+
+        table.getColumns().addAll(nameCol, ipCol, portCol, locationCol, actionCol);
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+
+        // Cihazları yükle
+        new Thread(() -> {
+            List<Device> devices = backendApiClient.getDevices();
+            Platform.runLater(() -> table.setItems(FXCollections.observableArrayList(devices)));
+        }).start();
+
+        // Kaydet butonu
+        saveBtn.setOnAction(e -> {
+            String name = nameInput.getText().trim();
+            String ip = ipInput.getText().trim();
+            if (name.isEmpty() || ip.isEmpty()) return;
+            int port = portInput.getText().isEmpty() ? 5432 : Integer.parseInt(portInput.getText());
+            new Thread(() -> {
+                Device device = backendApiClient.createDevice(name, ip, port, locationInput.getText().trim());
+                Platform.runLater(() -> {
+                    if (device != null) {
+                        nameInput.clear();
+                        ipInput.clear();
+                        portInput.setText("5432");
+                        locationInput.clear();
+                        new Thread(() -> {
+                            List<Device> devices = backendApiClient.getDevices();
+                            Platform.runLater(() -> table.setItems(FXCollections.observableArrayList(devices)));
+                        }).start();
+                        refreshDeviceSelector();
+                    }
+                });
+            }).start();
+        });
+
+        VBox layout = new VBox(8, form, table);
+        layout.setPadding(new Insets(16));
+        layout.setStyle("-fx-background-color: #0d1117;");
+
+        javafx.scene.Scene scene = new javafx.scene.Scene(layout, 800, 450);
+        scene.getStylesheets().add(getClass().getResource("/styles/app.css").toExternalForm());
+        stage.setScene(scene);
+        stage.show();
     }
 }
