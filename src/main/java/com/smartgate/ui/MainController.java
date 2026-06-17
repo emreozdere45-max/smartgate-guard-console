@@ -1310,9 +1310,13 @@ public class MainController {
                 String current = deviceSelector.getValue();
                 deviceSelector.getItems().clear();
                 for (Device d : devices) {
-                    // Sadece zil panellerini göster
-                    if (d.getIpAddress() != null && d.getIpAddress().endsWith("255.1")) {
-                        deviceSelector.getItems().add(d.getId() + " | " + d.getName() + " (" + d.getIpAddress() + ")");
+                    if (d.getIpAddress() != null && d.getIpAddress().contains(".255.")) {
+                        try {
+                            int lastOctet = Integer.parseInt(d.getIpAddress().split("\\.")[3]);
+                            if (lastOctet >= 1 && lastOctet <= 4) {
+                                deviceSelector.getItems().add(d.getId() + " | " + d.getName() + " (" + d.getIpAddress() + ")");
+                            }
+                        } catch (Exception ignored) {}
                     }
                 }
                 if (current != null && deviceSelector.getItems().contains(current)) {
