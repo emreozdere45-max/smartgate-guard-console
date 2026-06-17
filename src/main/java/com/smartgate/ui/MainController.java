@@ -508,6 +508,24 @@ public class MainController {
                 }).start();
             }
 
+            if (packet.getOpe_type() == 26) {
+                String senderIp = packet.getSenderIp();
+                System.out.println("Yeni cihaz keşif isteği: " + senderIp);
+                if (senderIp != null) {
+                    new Thread(() -> {
+                        List<Device> mevcutDevices = backendApiClient.getDevices();
+                        List<String> mevcutIpler = mevcutDevices.stream()
+                                .map(Device::getIpAddress)
+                                .toList();
+                        if (!mevcutIpler.contains(senderIp)) {
+                            intercomClient.sendSecurityHandshakeToIp(senderIp, 1,
+                                    com.smartgate.ConfigManager.get("LOCAL_IP", "172.1.0.1"));
+                            System.out.println("Yeni panel handshake gönderildi: " + senderIp);
+                        }
+                    }).start();
+                }
+            }
+
             if (packet.getOpe_type() == IntercomClient.OPERATION_ARAMA_REQUEST) {
                 Platform.runLater(() -> showIncomingCallPopup(packet));
             }
@@ -528,7 +546,7 @@ public class MainController {
                                 continue;
                             }
                             String name = "Blok " + daire.getBlok() + " Daire " + daire.getDaireNo();
-                            backendApiClient.createDevice(name, ip, 5432, "Kat " + daire.getKatNo());
+                            backendApiClient.createDevice(name, ip, 5432, "Kat " + daire.getKatNo(), null);
                             System.out.println("Daire eklendi: " + name + " → " + ip);
                         }
 
@@ -538,7 +556,8 @@ public class MainController {
                                     packet.getZilPanel().getDeviceName() : "Zil Paneli";
                             if (!mevcutIpler.contains(zilIp)) {
                                 backendApiClient.createDevice(zilName, zilIp, 5432,
-                                        "Blok " + packet.getZilPanel().getBlok());
+                                        "Blok " + packet.getZilPanel().getBlok(),
+                                        packet.getZilPanel().getDerivedId());
                                 System.out.println("Zil paneli eklendi: " + zilName + " → " + zilIp);
                             } else {
                                 System.out.println("Zil paneli zaten var: " + zilIp);
@@ -806,7 +825,7 @@ public class MainController {
         int port = portStr.isEmpty() ? 5432 : Integer.parseInt(portStr);
 
         new Thread(() -> {
-            Device device = backendApiClient.createDevice(name, ip, port, location);
+            Device device = backendApiClient.createDevice(name, ip, port, location, null);
             Platform.runLater(() -> {
                 if (device != null) {
                     deviceNameInput.clear();
@@ -1306,7 +1325,9 @@ public class MainController {
     }
 
     private void startNetworkScan() {
+        String localIp = com.smartgate.ConfigManager.get("LOCAL_IP", "172.1.0.1");
         intercomClient.scanNetworkForDevices(ip -> {
+            if (ip.equals(localIp)) return; // Kendi IP'mizi atla
             System.out.println("Yeni zil paneli bulundu: " + ip);
             new Thread(() -> {
                 List<Device> mevcutDevices = backendApiClient.getDevices();
@@ -1314,12 +1335,10 @@ public class MainController {
                         .map(Device::getIpAddress)
                         .toList();
                 if (!mevcutIpler.contains(ip)) {
-                    intercomClient.sendSecurityHandshakeToIp(ip, 1,
-                            com.smartgate.ConfigManager.get("LOCAL_IP", "172.1.0.1"));
+                    intercomClient.sendSecurityHandshakeToIp(ip, 1, localIp);
                     System.out.println("Yeni panel bulundu, handshake gönderildi: " + ip);
                 } else {
-                    intercomClient.sendSecurityHandshakeToIp(ip, 1,
-                            com.smartgate.ConfigManager.get("LOCAL_IP", "172.1.0.1"));
+                    intercomClient.sendSecurityHandshakeToIp(ip, 1, localIp);
                     System.out.println("Zaten kayıtlı, handshake yenilendi: " + ip);
                 }
             }).start();
@@ -1411,7 +1430,7 @@ public class MainController {
             if (name.isEmpty() || ip.isEmpty()) return;
             int port = portInput.getText().isEmpty() ? 5432 : Integer.parseInt(portInput.getText());
             new Thread(() -> {
-                Device device = backendApiClient.createDevice(name, ip, port, locationInput.getText().trim());
+                Device device = backendApiClient.createDevice(name, ip, port, locationInput.getText().trim(), null);
                 Platform.runLater(() -> {
                     if (device != null) {
                         nameInput.clear();

@@ -8,6 +8,10 @@ public class Device {
     private String location;
     private boolean active;
 
+    private String macAddress;
+    public String getMacAddress() { return macAddress; }
+    public void setMacAddress(String macAddress) { this.macAddress = macAddress; }
+
     public Device() {}
 
     public Long getId() { return id; }

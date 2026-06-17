@@ -39,6 +39,12 @@ public class IntercomDevice {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    @Column(name = "mac_address", length = 17)
+    private String macAddress;
+
+    public String getMacAddress() { return macAddress; }
+    public void setMacAddress(String macAddress) { this.macAddress = macAddress; }
+
     @PrePersist
     void prePersist() {
         LocalDateTime now = LocalDateTime.now();

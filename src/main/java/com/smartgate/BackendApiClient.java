@@ -106,13 +106,14 @@ public class BackendApiClient {
         return devices == null ? Collections.emptyList() : Arrays.asList(devices);
     }
 
-    public Device createDevice(String name, String ipAddress, int port, String location) {
+    public Device createDevice(String name, String ipAddress, int port, String location, String macAddress) {
         JsonObject body = new JsonObject();
         body.addProperty("name", name);
         body.addProperty("ipAddress", ipAddress);
         body.addProperty("commandPort", port);
         body.addProperty("location", location != null ? location : "");
         body.addProperty("active", true);
+        if (macAddress != null) body.addProperty("macAddress", macAddress);
         String response = post("/devices", gson.toJson(body));
         return response == null ? null : gson.fromJson(response, Device.class);
     }

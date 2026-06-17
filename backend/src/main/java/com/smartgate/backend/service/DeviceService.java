@@ -30,6 +30,7 @@ public class DeviceService {
         device.setCommandPort(request.portOrDefault());
         device.setLocation(request.location());
         device.setActive(request.activeOrDefault());
+        device.setMacAddress(request.macAddress());
         return toResponse(intercomDeviceRepository.save(device));
     }
 

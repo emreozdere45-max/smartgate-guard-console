@@ -65,11 +65,15 @@ public class ComPackageModel {
         public double blok;
         public double kapiNo;
         public String deviceName;
+        public String deviceId;
+        public String derivedId;
 
         public String getIp() { return ip; }
         public int getBlok() { return (int) blok; }
         public int getKapiNo() { return (int) kapiNo; }
         public String getDeviceName() { return deviceName; }
+        public String getDeviceId() { return deviceId; }
+        public String getDerivedId() { return derivedId; }
     }
 
     private ZilPanelInfo zilPanel;
@@ -105,5 +109,10 @@ public class ComPackageModel {
     private DaireRef daire;
     public DaireRef getDaire() { return daire; }
     public void setDaire(DaireRef daire) { this.daire = daire; }
+
+
+    private transient String senderIp;
+    public String getSenderIp() { return senderIp; }
+    public void setSenderIp(String senderIp) { this.senderIp = senderIp; }
 
 }

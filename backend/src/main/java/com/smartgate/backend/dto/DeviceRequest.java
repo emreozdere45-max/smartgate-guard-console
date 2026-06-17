@@ -6,11 +6,12 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 public record DeviceRequest(
-    @NotBlank @Size(max = 80) String name,
-    @NotBlank @Size(max = 80) String ipAddress,
-    @Min(1) @Max(65535) Integer commandPort,
-    @Size(max = 120) String location,
-    Boolean active
+        @NotBlank @Size(max = 80) String name,
+        @NotBlank @Size(max = 80) String ipAddress,
+        @Min(1) @Max(65535) Integer commandPort,
+        @Size(max = 120) String location,
+        Boolean active,
+        @Size(max = 17) String macAddress
 ) {
     public int portOrDefault() {
         return commandPort == null ? 5432 : commandPort;

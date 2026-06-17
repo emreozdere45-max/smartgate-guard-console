@@ -192,7 +192,8 @@ public class IntercomClient {
                             if (rest == null) continue;
                             String json = new String(header) + rest;
                             ComPackageModel packet = gson.fromJson(json, ComPackageModel.class);
-                            System.out.println("Komut paketi alındı: ope_type=" + packet.getOpe_type());
+                            packet.setSenderIp(client.getInetAddress().getHostAddress());
+                            System.out.println("Komut paketi alındı: ope_type=" + packet.getOpe_type() + " from=" + packet.getSenderIp());
                             onPacketReceived.accept(packet);
                         }
                     } catch (Exception e) {
@@ -217,25 +218,66 @@ public class IntercomClient {
     public void scanNetworkForDevices(java.util.function.Consumer<String> onDeviceFound) {
         new Thread(() -> {
             System.out.println("Ağ taraması başlıyor...");
-            for (int i = 1; i <= 10; i++) {
-                String ip = "172." + i + ".255.1";
-                try {
-                    java.net.InetAddress addr = java.net.InetAddress.getByName(ip);
-                    if (addr.isReachable(1000)) {
-                        System.out.println("Cihaz bulundu (ping): " + ip);
-                        onDeviceFound.accept(ip);
-                    } else {
-                        try (java.net.Socket s = new java.net.Socket()) {
-                            s.connect(new java.net.InetSocketAddress(ip, INTERCOM_COMMAND_PORT), 1000);
-                            System.out.println("Cihaz bulundu (TCP): " + ip);
-                            onDeviceFound.accept(ip);
-                        } catch (Exception ignored) {}
+            java.util.concurrent.ExecutorService executor =
+                    java.util.concurrent.Executors.newFixedThreadPool(100);
+
+            // 1. ARP tablosundan bak
+            try {
+                Process process = Runtime.getRuntime().exec("arp -a");
+                java.io.BufferedReader reader = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(process.getInputStream()));
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (line.contains("172.")) {
+                        String[] parts = line.trim().split("\\s+");
+                        if (parts.length > 0) {
+                            String ip = parts[0];
+                            if (ip.startsWith("172.")) {
+                                try {
+                                    int secondOctet = Integer.parseInt(ip.split("\\.")[1]);
+                                    if (secondOctet <= 20) {
+                                        final String finalIp = ip;
+                                        executor.submit(() -> {
+                                            try (java.net.Socket s = new java.net.Socket()) {
+                                                s.connect(new java.net.InetSocketAddress(finalIp, INTERCOM_COMMAND_PORT), 500);
+                                                System.out.println("ARP'den bulundu: " + finalIp);
+                                                onDeviceFound.accept(finalIp);
+                                            } catch (Exception ignored) {}
+                                        });
+                                    }
+                                } catch (Exception ignored) {}
+                            }
+                        }
                     }
-                } catch (Exception ignored) {}
+                }
+            } catch (Exception e) {
+                System.err.println("ARP tarama hatası: " + e.getMessage());
             }
+
+            // 2. Pattern taraması (255.1 ve 0.1)
+            for (int b = 1; b <= 20; b++) {
+                for (int c : new int[]{0, 1, 255}) {
+                    for (int d = 1; d <= 255; d++) {
+                        final String ip = "172." + b + "." + c + "." + d;
+                        executor.submit(() -> {
+                            try (java.net.Socket s = new java.net.Socket()) {
+                                s.connect(new java.net.InetSocketAddress(ip, INTERCOM_COMMAND_PORT), 300);
+                                System.out.println("Pattern'den bulundu: " + ip);
+                                onDeviceFound.accept(ip);
+                            } catch (Exception ignored) {}
+                        });
+                    }
+                }
+            }
+
+            executor.shutdown();
+            try {
+                executor.awaitTermination(60, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (Exception ignored) {}
             System.out.println("Ağ taraması tamamlandı.");
         }).start();
     }
+
     public void unlockDoorToIp(String targetIp) {
         ComPackageModel packet = new ComPackageModel();
         packet.setOpe_type(OPERATION_DOOR_UNLOCK);
