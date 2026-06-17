@@ -655,12 +655,10 @@ public class MainController {
                 logs = gateLogDAO.getAll();
             }
             List<Visitor> visitors = backendApiClient.getVisitors();
-            List<Device> devices = backendApiClient.getDevices();
             List<Resident> residents = backendApiClient.getResidents();
             Platform.runLater(() -> {
                 gateLogTable.setItems(FXCollections.observableArrayList(logs));
                 visitorTable.setItems(FXCollections.observableArrayList(visitors));
-                deviceTable.setItems(FXCollections.observableArrayList(devices));
                 residentTable.setItems(FXCollections.observableArrayList(residents));
             });
         }).start();
