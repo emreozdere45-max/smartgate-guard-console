@@ -530,6 +530,24 @@ public class MainController {
                 Platform.runLater(() -> showIncomingCallPopup(packet));
             }
 
+            if (packet.getOpe_type() == IntercomClient.OPERATION_MESSAGE) {
+                System.out.println("Daireden mesaj geldi from=" + packet.getSenderIp());
+                ChatMessage msg = new ChatMessage();
+                msg.setSenderType("RESIDENT");
+                msg.setMessageText(packet.getDataString() != null ? packet.getDataString() : "");
+                msg.setSentAt(java.time.ZonedDateTime.now(java.time.ZoneId.of("Europe/Istanbul")).toLocalDateTime());
+                new Thread(() -> {
+                    List<Device> devices = backendApiClient.getDevices();
+                    for (Device d : devices) {
+                        if (d.getIpAddress() != null && d.getIpAddress().equals(packet.getSenderIp())) {
+                            msg.setDeviceId(d.getId());
+                            break;
+                        }
+                    }
+                    new com.smartgate.database.ChatMessageDAO().insert(msg);
+                }).start();
+            }
+
             if (packet.getOpe_type() == IntercomClient.OPERATION_HANDSHAKE_GUVENLIK_RESPONSE) {
                 System.out.println("✅ Cihaz bağlantısı onaylandı!");
                 if (packet.getDaires() != null) {
@@ -1088,21 +1106,27 @@ public class MainController {
         chatStage.setTitle("💬 Mesajlaşma");
 
         ListView<String> apartmentList = new ListView<>();
-        apartmentList.setPrefWidth(200);
+        apartmentList.setPrefWidth(220);
         apartmentList.setStyle("-fx-background-color: #161b22; -fx-border-color: #30363d;");
 
+        // Sadece şubeleri yükle (zil paneli değil)
         new Thread(() -> {
             List<Device> devices = backendApiClient.getDevices();
+            java.util.Map<String, String> arpTable = intercomClient.getArpTable();
             Platform.runLater(() -> {
-                apartmentList.getItems().add("📢 Tüm Daireler");
                 for (Device d : devices) {
-                    apartmentList.getItems().add(d.getId() + "|" + d.getName() + " (" + d.getIpAddress() + ")");
+                    if (d.getIpAddress() != null
+                            && !d.getIpAddress().contains(".255.")
+                            && arpTable.containsKey(d.getIpAddress())) {
+                        apartmentList.getItems().add(d.getId() + "|" + d.getName() + " (" + d.getIpAddress() + ")");
+                    }
                 }
             });
         }).start();
 
         ListView<String> messageList = new ListView<>();
         messageList.setStyle("-fx-background-color: #0d1117; -fx-border-color: #30363d;");
+        VBox.setVgrow(messageList, Priority.ALWAYS);
 
         TextField messageInput = new TextField();
         messageInput.setPromptText("Mesaj yaz...");
@@ -1113,6 +1137,34 @@ public class MainController {
 
         ChatMessageDAO chatDAO = new ChatMessageDAO();
 
+        // Seçili daire için mesajları yükle
+        Runnable loadMessages = () -> {
+            String selected = apartmentList.getSelectionModel().getSelectedItem();
+            if (selected == null) return;
+            new Thread(() -> {
+                List<ChatMessage> msgs;
+                try {
+                    Long devId = Long.parseLong(selected.split("\\|")[0].trim());
+                    msgs = chatDAO.getByDeviceId(devId);
+                } catch (Exception ex) {
+                    msgs = new java.util.ArrayList<>();
+                }
+                final List<ChatMessage> finalMsgs = msgs;
+                Platform.runLater(() -> {
+                    messageList.getItems().clear();
+                    for (ChatMessage m : finalMsgs) {
+                        String prefix = "SECURITY".equals(m.getSenderType()) ? "🛡 Güvenlik: " : "🏠 Daire: ";
+                        messageList.getItems().add(prefix + m.getMessageText() +
+                                "  " + m.getSentAt().toString().substring(11, 16));
+                    }
+                    if (!messageList.getItems().isEmpty()) {
+                        messageList.scrollTo(messageList.getItems().size() - 1);
+                    }
+                });
+            }).start();
+        };
+
+        // Mesaj gönder
         javafx.event.EventHandler<javafx.event.ActionEvent> sendHandler = e -> {
             String text = messageInput.getText().trim();
             String selected = apartmentList.getSelectionModel().getSelectedItem();
@@ -1124,24 +1176,21 @@ public class MainController {
             msg.setSentAt(java.time.ZonedDateTime.now(java.time.ZoneId.of("Europe/Istanbul")).toLocalDateTime());
 
             String targetIp = null;
-            if (!selected.equals("📢 Tüm Daireler") && selected.contains("|")) {
-                try {
-                    Long devId = Long.parseLong(selected.split("\\|")[0].trim());
-                    msg.setDeviceId(devId);
-                } catch (Exception ex) {}
-                targetIp = selected.replaceAll(".*\\((.*)\\).*", "$1");
-            }
-            final String finalTargetIp = targetIp;
+            try {
+                Long devId = Long.parseLong(selected.split("\\|")[0].trim());
+                msg.setDeviceId(devId);
+            } catch (Exception ex) {}
+            targetIp = selected.replaceAll(".*\\((.*)\\).*", "$1");
 
+            final String finalTargetIp = targetIp;
             new Thread(() -> {
                 chatDAO.insert(msg);
                 if (finalTargetIp != null) {
                     intercomClient.sendMessageToApartment(finalTargetIp, text);
-                    System.out.println("Mesaj gönderildi: " + finalTargetIp + " → " + text);
                 }
                 Platform.runLater(() -> {
-                    messageList.getItems().add(0, "🛡 Güvenlik: " + text);
                     messageInput.clear();
+                    loadMessages.run();
                 });
             }).start();
         };
@@ -1149,59 +1198,40 @@ public class MainController {
         sendMsgBtn.setOnAction(sendHandler);
         messageInput.setOnAction(sendHandler);
 
+        // Daire seçince mesajları yükle
         apartmentList.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
-            if (newVal == null) return;
-            messageList.getItems().clear();
-            new Thread(() -> {
-                final List<ChatMessage> msgs;
-                if (newVal.equals("📢 Tüm Daireler")) {
-                    msgs = chatDAO.getAll();
-                } else if (newVal.contains("|")) {
-                    List<ChatMessage> temp;
-                    try {
-                        Long devId = Long.parseLong(newVal.split("\\|")[0].trim());
-                        temp = chatDAO.getByDeviceId(devId);
-                    } catch (Exception ex) {
-                        temp = chatDAO.getAll();
-                    }
-                    msgs = temp;
-                } else {
-                    msgs = chatDAO.getAll();
-                }
-                Platform.runLater(() -> {
-                    messageList.getItems().clear();
-                    for (ChatMessage m : msgs) {
-                        String prefix = "SECURITY".equals(m.getSenderType()) ? "🛡 Güvenlik: " : "🏠 Daire: ";
-                        messageList.getItems().add(prefix + m.getMessageText() +
-                                " (" + m.getSentAt().toString().substring(11, 16) + ")");
-                    }
-                });
-            }).start();
+            if (newVal != null) loadMessages.run();
         });
+
+        // 3 saniyede bir otomatik yenile (karşıdan gelen mesajlar)
+        javafx.animation.Timeline autoRefresh = new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(javafx.util.Duration.seconds(3), ev -> loadMessages.run())
+        );
+        autoRefresh.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        autoRefresh.play();
+        chatStage.setOnHidden(ev -> autoRefresh.stop());
 
         HBox inputRow = new HBox(8, messageInput, sendMsgBtn);
         HBox.setHgrow(messageInput, Priority.ALWAYS);
+        inputRow.setPadding(new Insets(8));
 
         Label msgLabel = new Label("Mesajlar");
-        msgLabel.setStyle("-fx-text-fill: #8b949e; -fx-font-size: 11px; -fx-font-weight: bold;");
+        msgLabel.setStyle("-fx-text-fill: #8b949e; -fx-font-size: 11px; -fx-font-weight: bold; -fx-padding: 8 0 0 8;");
 
-        VBox rightPanel = new VBox(8, msgLabel, messageList, inputRow);
-        VBox.setVgrow(messageList, Priority.ALWAYS);
-        rightPanel.setPadding(new Insets(8));
+        VBox rightPanel = new VBox(4, msgLabel, messageList, inputRow);
         rightPanel.setStyle("-fx-background-color: #0d1117;");
 
         Label aptLabel = new Label("Daireler");
-        aptLabel.setStyle("-fx-text-fill: #8b949e; -fx-font-size: 11px; -fx-font-weight: bold;");
+        aptLabel.setStyle("-fx-text-fill: #8b949e; -fx-font-size: 11px; -fx-font-weight: bold; -fx-padding: 8 0 4 8;");
 
-        VBox leftPanel = new VBox(8, aptLabel, apartmentList);
+        VBox leftPanel = new VBox(4, aptLabel, apartmentList);
         VBox.setVgrow(apartmentList, Priority.ALWAYS);
-        leftPanel.setPadding(new Insets(8));
         leftPanel.setStyle("-fx-background-color: #161b22; -fx-border-color: #30363d; -fx-border-width: 0 1 0 0;");
 
         SplitPane splitPane = new SplitPane(leftPanel, rightPanel);
-        splitPane.setDividerPositions(0.25);
+        splitPane.setDividerPositions(0.28);
 
-        javafx.scene.Scene scene = new javafx.scene.Scene(splitPane, 750, 500);
+        javafx.scene.Scene scene = new javafx.scene.Scene(splitPane, 800, 520);
         scene.getStylesheets().add(getClass().getResource("/styles/app.css").toExternalForm());
         chatStage.setScene(scene);
         chatStage.show();
@@ -1310,13 +1340,9 @@ public class MainController {
                 String current = deviceSelector.getValue();
                 deviceSelector.getItems().clear();
                 for (Device d : devices) {
-                    if (d.getIpAddress() != null && d.getIpAddress().contains(".255.")) {
-                        try {
-                            int lastOctet = Integer.parseInt(d.getIpAddress().split("\\.")[3]);
-                            if (lastOctet >= 1 && lastOctet <= 4) {
-                                deviceSelector.getItems().add(d.getId() + " | " + d.getName() + " (" + d.getIpAddress() + ")");
-                            }
-                        } catch (Exception ignored) {}
+                    // Sadece zil panellerini göster
+                    if (d.getIpAddress() != null && d.getIpAddress().endsWith("255.1")) {
+                        deviceSelector.getItems().add(d.getId() + " | " + d.getName() + " (" + d.getIpAddress() + ")");
                     }
                 }
                 if (current != null && deviceSelector.getItems().contains(current)) {
@@ -1330,9 +1356,9 @@ public class MainController {
 
     private void startNetworkScan() {
         String localIp = com.smartgate.ConfigManager.get("LOCAL_IP", "172.1.0.1");
-        intercomClient.scanNetworkForDevices(ip -> {
-            if (ip.equals(localIp)) return; // Kendi IP'mizi atla
-            System.out.println("Yeni zil paneli bulundu: " + ip);
+        intercomClient.scanNetworkForDevices((ip, mac) -> {
+            if (ip.equals(localIp)) return;
+            System.out.println("Cihaz bulundu: " + ip + (mac != null ? " MAC: " + mac : ""));
             new Thread(() -> {
                 List<Device> mevcutDevices = backendApiClient.getDevices();
                 List<String> mevcutIpler = mevcutDevices.stream()

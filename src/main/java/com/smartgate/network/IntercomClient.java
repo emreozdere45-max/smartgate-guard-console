@@ -215,46 +215,34 @@ public class IntercomClient {
         sendCommandToIp(targetIp, packet);
     }
 
-    public void scanNetworkForDevices(java.util.function.Consumer<String> onDeviceFound) {
+    public void scanNetworkForDevices(java.util.function.BiConsumer<String, String> onDeviceFound) {
         new Thread(() -> {
             System.out.println("Ağ taraması başlıyor...");
             java.util.concurrent.ExecutorService executor =
                     java.util.concurrent.Executors.newFixedThreadPool(100);
 
             // 1. ARP tablosundan bak
-            try {
-                Process process = Runtime.getRuntime().exec("arp -a");
-                java.io.BufferedReader reader = new java.io.BufferedReader(
-                        new java.io.InputStreamReader(process.getInputStream()));
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (line.contains("172.")) {
-                        String[] parts = line.trim().split("\\s+");
-                        if (parts.length > 0) {
-                            String ip = parts[0];
-                            if (ip.startsWith("172.")) {
-                                try {
-                                    int secondOctet = Integer.parseInt(ip.split("\\.")[1]);
-                                    if (secondOctet <= 20) {
-                                        final String finalIp = ip;
-                                        executor.submit(() -> {
-                                            try (java.net.Socket s = new java.net.Socket()) {
-                                                s.connect(new java.net.InetSocketAddress(finalIp, INTERCOM_COMMAND_PORT), 500);
-                                                System.out.println("ARP'den bulundu: " + finalIp);
-                                                onDeviceFound.accept(finalIp);
-                                            } catch (Exception ignored) {}
-                                        });
-                                    }
-                                } catch (Exception ignored) {}
-                            }
-                        }
+            java.util.Map<String, String> arpTable = getArpTable();
+            for (java.util.Map.Entry<String, String> entry : arpTable.entrySet()) {
+                String ip = entry.getKey();
+                String mac = entry.getValue();
+                try {
+                    int secondOctet = Integer.parseInt(ip.split("\\.")[1]);
+                    if (secondOctet <= 20) {
+                        final String finalIp = ip;
+                        final String finalMac = mac;
+                        executor.submit(() -> {
+                            try (java.net.Socket s = new java.net.Socket()) {
+                                s.connect(new java.net.InetSocketAddress(finalIp, INTERCOM_COMMAND_PORT), 500);
+                                System.out.println("ARP'den bulundu: " + finalIp + " MAC: " + finalMac);
+                                onDeviceFound.accept(finalIp, finalMac);
+                            } catch (Exception ignored) {}
+                        });
                     }
-                }
-            } catch (Exception e) {
-                System.err.println("ARP tarama hatası: " + e.getMessage());
+                } catch (Exception ignored) {}
             }
 
-            // 2. Pattern taraması (255.1 ve 0.1)
+            // 2. Pattern taraması
             for (int b = 1; b <= 20; b++) {
                 for (int c : new int[]{0, 1, 255}) {
                     for (int d = 1; d <= 255; d++) {
@@ -263,7 +251,7 @@ public class IntercomClient {
                             try (java.net.Socket s = new java.net.Socket()) {
                                 s.connect(new java.net.InetSocketAddress(ip, INTERCOM_COMMAND_PORT), 300);
                                 System.out.println("Pattern'den bulundu: " + ip);
-                                onDeviceFound.accept(ip);
+                                onDeviceFound.accept(ip, null);
                             } catch (Exception ignored) {}
                         });
                     }
@@ -286,4 +274,31 @@ public class IntercomClient {
         sendCommandToIp(targetIp, packet);
         System.out.println("Kapı açma komutu gönderildi: " + targetIp);
     }
+
+    public java.util.Map<String, String> getArpTable() {
+        java.util.Map<String, String> arpMap = new java.util.HashMap<>();
+        try {
+            Process process = Runtime.getRuntime().exec("arp -a");
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(process.getInputStream()));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.startsWith("172.")) {
+                    String[] parts = line.split("\\s+");
+                    if (parts.length >= 2) {
+                        String ip = parts[0];
+                        String mac = parts[1];
+                        if (mac.contains("-") || mac.contains(":")) {
+                            arpMap.put(ip, mac.replace("-", ":").toLowerCase());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("ARP okuma hatası: " + e.getMessage());
+        }
+        return arpMap;
+    }
+
 }
